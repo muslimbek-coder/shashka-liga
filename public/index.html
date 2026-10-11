@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shashka Liga</title>
+<style>
+:root{--bg:#1c2428;--panel:#263137;--line:#3a484f;--tx:#eef1ea;--mut:#9fb0b6;--lt:#e6d7b0;--dk:#5a7355;--blue:#1f5fd6;--acc:#e0b04a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;line-height:1.4}
+button{font:inherit;cursor:pointer;border:0;border-radius:6px;padding:7px 12px;background:var(--acc);color:#1c1c1c;font-weight:700}
+button:disabled{opacity:.35;cursor:not-allowed}
+button.ghost{background:transparent;color:var(--tx);border:1px solid var(--line)}
+input{font:inherit;padding:10px 12px;border-radius:6px;border:1px solid var(--line);background:#141b1e;color:var(--tx);width:100%}
+button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+#login{max-width:380px;margin:12vh auto;padding:28px;background:var(--panel);border-radius:10px}
+#login h1{margin:0 0 4px;font-size:26px}
+#login p{color:var(--mut);margin:0 0 18px}
+#login label{display:block;margin:12px 0 4px;color:var(--mut);font-size:14px}
+#err{color:#ff8f7a;min-height:20px;margin-top:10px;font-size:14px}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px 18px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap}
+header b{font-size:18px}
+main{display:grid;grid-template-columns:290px minmax(300px,1fr) 340px;gap:16px;padding:16px;align-items:start}
+section{background:var(--panel);border-radius:10px;padding:14px}
+h2{margin:0 0 10px;font-size:16px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
+.row:last-child{border-bottom:0}
+.mut{color:var(--mut);font-size:13px}
+.tag{background:var(--acc);color:#1c1c1c;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:700}
+#boardwrap{display:flex;flex-direction:column;align-items:center;gap:10px}
+#board{display:grid;grid-template-columns:repeat(10,1fr);width:min(100%,78vh,640px);aspect-ratio:1;border:6px solid #3a2f22;border-radius:4px}
+.sq{position:relative;display:flex;align-items:center;justify-content:center}
+.sq.l{background:var(--lt)}.sq.d{background:var(--dk)}
+.sq.sel{box-shadow:inset 0 0 0 4px var(--acc)}
+.sq.dst::after{content:"";width:28%;height:28%;border-radius:50%;background:rgba(224,176,74,.85);position:absolute}
+.pc{width:78%;height:78%;border-radius:50%;display:flex;align-items:center;justify-content:center;font-style:normal;font-size:min(3.4vh,24px);box-shadow:0 2px 3px rgba(0,0,0,.5)}
+.pc.w{background:radial-gradient(circle at 35% 30%,#fff,#d8d4c6);color:#8a6a1c}
+.pc.b{background:radial-gradient(circle at 35% 30%,#4a4a4a,#111);color:#e0b04a}
+#info{width:100%;text-align:center}
+#info .big{font-size:17px;font-weight:700}
+#msg{margin-top:6px;color:var(--acc);font-weight:700;min-height:22px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{color:var(--mut);font-weight:600;text-align:right;padding:6px 4px;border-bottom:1px solid var(--line)}
+td{padding:7px 4px;text-align:right}
+th:nth-child(2),td:nth-child(2){text-align:left}
+tr.top td{background:var(--blue)}
+tr.top td:first-child{border-radius:6px 0 0 6px}tr.top td:last-child{border-radius:0 6px 6px 0}
+tr.me td:nth-child(2){text-decoration:underline}
+details{margin-top:12px;color:var(--mut);font-size:13px}
+@media(max-width:1100px){main{grid-template-columns:1fr}#boardwrap{order:-1}}
+</style>
+</head>
+<body>
+<div id="login">
+  <h1>Shashka Liga</h1>
+  <p>Guruh nomi va ismingizni kiriting. Bir xil guruhdagilar bir ligada o'ynaydi.</p>
+  <label for="grp">Guruh nomi</label><input id="grp" maxlength="30" autocomplete="off">
+  <label for="nm">Ismingiz</label><input id="nm" maxlength="20" autocomplete="off">
+  <button id="go" style="margin-top:16px;width:100%">Kirish</button>
+  <div id="err"></div>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <div><b id="hg"></b> <span class="mut" id="hn"></span></div>
+    <button class="ghost" id="out">Chiqish</button>
+  </header>
+  <main>
+    <div>
+      <section>
+        <h2>Ishtirokchilar</h2>
+        <div id="lobby"></div>
+      </section>
+      <section style="margin-top:16px">
+        <h2>O'yinlar</h2>
+        <div id="glist"></div>
+      </section>
+    </div>
+    <section id="boardwrap">
+      <div id="info"></div>
+      <div id="board"></div>
+      <div id="msg"></div>
+    </section>
+    <section>
+      <h2>Liga jadvali</h2>
+      <div id="tbl"></div>
+      <details><summary>Qoidalar</summary>
+        <p>Xalqaro shashka (10x10). G'alaba 3 ochko, durang 1, mag'lubiyat 0. Har kim 8 ta o'yin o'ynaydi, har raqib bilan bittadan. Urish majburiy: urmasdan boshqa dona yurilsa "Chippaki!" deyiladi va urishi kerak bo'lgan dona raqibga beriladi. Ikkala tomonda damkasiz bittadan dona qolsa, durang. Ochko teng bo'lsa, donalar farqi hal qiladi (g'alabada +qolgan donalar, mag'lubiyatda −raqibning qolgan donalari). Dastlabki 3 o'rin ko'k rangda.</p>
+      </details>
+    </section>
+  </main>
+</div>
+
+<script src="engine.js"></script>
+<script>
+const MAXG=8;
+const {dests}=Engine;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let meId,players={},games={},cur=null,sel=null,sock=null,joined=false,creds=null;
+
+/* ---------- Jadval ---------- */
+function table(){
+  const t={};
+  for(const id in players)t[id]={id,name:players[id].name,pts:0,diff:0,pl:0};
+  for(const g of Object.values(games)){
+    if(g.status!=='done')continue;
+    const W=t[g.white],B=t[g.black];if(!W||!B)continue;
+    W.pl++;B.pl++;
+    if(g.result==='d'){W.pts++;B.pts++}
+    else{
+      const win=g.result==='w'?W:B,lose=g.result==='w'?B:W,left=g.result==='w'?g.wl:g.bl;
+      win.pts+=3;win.diff+=left;lose.diff-=left;
+    }
+  }
+  return Object.values(t).sort((x,y)=>y.pts-x.pts||y.diff-x.diff||x.name.localeCompare(y.name));
+}
+const nGames=id=>Object.values(games).filter(g=>g.white===id||g.black===id).length;
+const paired=(a,b)=>Object.values(games).some(g=>(g.white===a&&g.black===b)||(g.white===b&&g.black===a));
+const nm=id=>players[id]?players[id].name:id;
+
+/* ---------- Ko'rinish ---------- */
+function renderTable(){
+  const rows=table();
+  $('#tbl').innerHTML=`<table><tr><th>#</th><th>Ishtirokchi</th><th>O'yin</th><th>Donalar</th><th>Ochko</th></tr>`+
+  rows.map((r,i)=>`<tr class="${i<3&&r.pl>0?'top':''} ${r.id===meId?'me':''}"><td>${i+1}</td><td>${esc(r.name)}</td><td>${r.pl}/${Math.min(MAXG,Math.max(nGames(r.id),r.pl))}</td><td>${r.diff>0?'+':''}${r.diff}</td><td><b>${r.pts}</b></td></tr>`).join('')+`</table>`;
+}
+function renderLobby(){
+  const mine=nGames(meId);
+  $('#lobby').innerHTML=Object.keys(players).sort().map(id=>{
+    if(id===meId)return `<div class="row"><span>${esc(nm(id))} <span class="tag">siz</span></span><span class="mut">${mine}/${MAXG}</span></div>`;
+    const ok=!paired(meId,id)&&mine<MAXG&&nGames(id)<MAXG;
+    const why=paired(meId,id)?'o\'ynalgan':nGames(id)>=MAXG?'to\'lgan':'';
+    return `<div class="row"><span>${esc(nm(id))} <span class="mut">${nGames(id)}/${MAXG}</span></span>${ok?`<button data-ch="${id}">O'ynash</button>`:`<span class="mut">${why}</span>`}</div>`;
+  }).join('')||'<div class="mut">Hali hech kim yo\'q</div>';
+}
+function renderGames(){
+  const list=Object.entries(games).sort((a,b)=>b[1].created-a[1].created);
+  $('#glist').innerHTML=list.map(([id,g])=>{
+    const mine=g.white===meId||g.black===meId;
+    const my=mine&&g.status==='playing'&&((g.turn==='w'&&g.white===meId)||(g.turn==='b'&&g.black===meId));
+    const res=g.status==='done'?(g.result==='d'?'durang':(g.result==='w'?nm(g.white):nm(g.black))+' yutdi'):'davom etmoqda';
+    return `<div class="row"><span>${esc(nm(g.white))} – ${esc(nm(g.black))}<br><span class="mut">${esc(res)}</span> ${my?'<span class="tag">sizning yurishingiz</span>':''}</span><button class="ghost" data-open="${id}">${mine?'Ochish':'Ko\'rish'}</button></div>`;
+  }).join('')||'<div class="mut">O\'yin yo\'q. Ishtirokchini tanlang.</div>';
+}
+function renderBoard(){
+  const g=games[cur];
+  if(!g){$('#board').innerHTML='';$('#info').innerHTML='<div class="big">O\'yin tanlang</div><div class="mut">Chapdagi ro\'yxatdan raqib tanlang</div>';$('#msg').textContent='';return}
+  const mine=g.white===meId?'w':g.black===meId?'b':null,flip=mine==='b',b=g.board.split('');
+  const d=new Set();
+  if(sel!=null&&mine&&g.turn===mine&&g.status==='playing')dests(b,mine,sel).forEach(x=>d.add(x));
+  let h='';
+  for(let k=0;k<100;k++){
+    const i=flip?99-k:k,r=Math.floor(i/10),c=i%10,p=b[i],dark=(r+c)%2;
+    h+=`<div class="sq ${dark?'d':'l'}${i===sel?' sel':''}${d.has(i)?' dst':''}" data-i="${i}">${p!=='.'?`<i class="pc ${p.toLowerCase()}">${p===p.toUpperCase()?'♛':''}</i>`:''}</div>`;
+  }
+  $('#board').innerHTML=h;
+  const wc=b.filter(x=>x.toLowerCase()==='w').length,bc=b.filter(x=>x.toLowerCase()==='b').length;
+  let st;
+  if(g.status==='done')st=g.result==='d'?'Durang':`${esc(nm(g.result==='w'?g.white:g.black))} g'alaba qozondi`;
+  else st=`Yurish navbati: ${esc(nm(g.turn==='w'?g.white:g.black))}${mine===g.turn?' (siz)':''}`;
+  $('#info').innerHTML=`<div class="big">${esc(nm(g.white))} (oq, ${wc}) – ${esc(nm(g.black))} (qora, ${bc})</div><div>${st}</div>`;
+  $('#msg').textContent=g.msg||'';
+}
+const renderAll=()=>{renderTable();renderLobby();renderGames();renderBoard()};
+
+/* ---------- Harakatlar ---------- */
+const send=o=>{if(sock&&sock.readyState===1)sock.send(JSON.stringify(o))};
+const toast=t=>{$('#msg').textContent=t};
+$('#board').onclick=e=>{
+  const s=e.target.closest('.sq');if(!s)return;
+  const g=games[cur];if(!g||g.status!=='playing')return;
+  const mine=g.white===meId?'w':g.black===meId?'b':null;
+  if(!mine||g.turn!==mine)return;
+  const i=+s.dataset.i,b=g.board.split('');
+  if(sel!=null&&dests(b,mine,sel).includes(i)){send({t:'move',gid:cur,from:sel,to:i});sel=null}
+  else if(b[i]!=='.'&&b[i].toLowerCase()===mine)sel=i;
+  else sel=null;
+  renderBoard();
+};
+document.addEventListener('click',e=>{
+  const o=e.target.closest('[data-open]');
+  if(o){cur=o.dataset.open;sel=null;renderBoard();return}
+  const c=e.target.closest('[data-ch]');
+  if(c)send({t:'challenge',oid:c.dataset.ch});
+});
+
+/* ---------- Ulanish ---------- */
+function connect(){
+  return new Promise((res,rej)=>{
+    const s=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
+    sock=s;
+    s.onopen=()=>s.send(JSON.stringify({t:'join',g:creds.g,n:creds.n}));
+    s.onmessage=ev=>{
+      const m=JSON.parse(ev.data);
+      if(m.t==='joined'){joined=true;meId=creds.n.toLowerCase();res()}
+      else if(m.t==='state'){
+        players=m.players;games=m.games;
+        if(!cur||!games[cur]){const f=Object.entries(games).find(([,x])=>x.status==='playing'&&(x.white===meId||x.black===meId));cur=f?f[0]:null}
+        renderAll();
+      }
+      else if(m.t==='opened'){cur=m.gid;sel=null;renderAll()}
+      else if(m.t==='error'){if(!joined)rej(new Error(m.msg));else toast(m.msg)}
+    };
+    s.onerror=()=>{if(!joined)rej(new Error("Serverga ulanib bo'lmadi"))};
+    s.onclose=()=>{if(joined){toast("Aloqa uzildi, qayta ulanmoqda...");setTimeout(()=>connect().catch(()=>{}),2000)}};
+  });
+}
+const err=t=>$('#err').textContent=t;
+$('#go').onclick=async()=>{
+  const g=$('#grp').value.trim().toLowerCase().replace(/[\/\s]+/g,'_'),n=$('#nm').value.trim().slice(0,20);
+  if(!g||!n)return err('Guruh nomi va ismni kiriting');
+  err('');creds={g,n};
+  try{
+    await connect();
+    try{localStorage.setItem('shashka',JSON.stringify({g,n}))}catch(e){}
+    $('#login').hidden=true;$('#app').hidden=false;
+    $('#hg').textContent='Guruh: '+g;$('#hn').textContent='Siz: '+n;
+    setInterval(()=>send({t:'ping'}),25000);
+  }catch(e){err(e.message)}
+};
+$('#out').onclick=()=>{joined=false;try{localStorage.removeItem('shashka')}catch(e){}location.reload()};
+try{const s=JSON.parse(localStorage.getItem('shashka'));if(s){$('#grp').value=s.g;$('#nm').value=s.n}}catch(e){}
+</script>
+</body>
+</html>

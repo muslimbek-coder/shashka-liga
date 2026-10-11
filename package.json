@@ -1,0 +1,8 @@
+{
+  "name": "shashka-liga",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "pg": "^8.12.0", "ws": "^8.18.0" },
+  "engines": { "node": ">=18" }
+}
