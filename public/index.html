@@ -82,6 +82,48 @@ details{margin-top:12px;color:var(--mut);font-size:13px}
 summary{cursor:pointer;color:var(--acc2)}
 @media(max-width:1100px){main{grid-template-columns:1fr}#boardwrap{order:-1}}
 @media(max-width:640px){.modes{grid-template-columns:1fr}.pcards{grid-template-columns:1fr}#board{border-width:9px}}
+.modes{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+#mode{max-width:980px}
+textarea{font:inherit;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:#120c07;color:var(--tx);width:100%;min-height:80px;resize:vertical}
+.hbtns{display:flex;gap:8px;flex-wrap:wrap}
+#modal{position:fixed;inset:0;background:rgba(5,3,1,.72);display:flex;align-items:flex-start;justify-content:center;padding:5vh 12px;z-index:50;overflow:auto}
+.mbox{position:relative;width:100%;max-width:580px;background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 20px 50px rgba(0,0,0,.6)}
+.mbox .close{position:absolute;top:12px;right:12px;padding:4px 10px}
+#mmsg{color:#ff9a84;min-height:18px;font-size:14px;margin-bottom:6px}
+.av{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid var(--acc);flex:none}
+.av.sm{width:40px;height:40px;border-width:1px}
+.av.ini{display:flex;align-items:center;justify-content:center;background:#3a2615;color:var(--acc2);font-family:Georgia,serif;font-weight:700;font-size:24px}
+.av.ini.sm{font-size:15px}
+.ph{display:flex;gap:16px;align-items:center;margin-bottom:12px}
+.ph h2{margin:0;font-size:22px;color:var(--tx)}
+.avw{position:relative;cursor:pointer}
+.avedit{position:absolute;bottom:-4px;left:50%;transform:translateX(-50%);background:var(--acc);color:#2a1a08;border-radius:10px;font-size:11px;font-weight:700;padding:1px 8px;white-space:nowrap}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:16px}
+.stat{background:#1a110a;border:1px solid var(--line);border-radius:10px;padding:10px 4px;text-align:center}
+.stat b{display:block;font-size:22px;font-family:Georgia,serif}
+.stat span{font-size:12px;color:var(--mut)}
+.stat.w b{color:#7bd88f}.stat.l b{color:#ff8f7a}.stat.d b{color:var(--acc2)}
+.srch{display:flex;gap:8px;margin-bottom:10px}
+.urow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.urow .ui{flex:1;min-width:0}.urow .ui b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.urow .ua{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.urow button{padding:5px 10px;font-size:13px}
+.mbox h3{margin:16px 0 4px;font-size:14px;color:var(--acc2)}
+main.cup #side{order:3}
+@media(min-width:1101px){main.cup{grid-template-columns:290px minmax(300px,1fr)}main.cup #side{grid-column:1/-1}}
+.bracket{display:flex;gap:22px;overflow-x:auto;padding:4px 2px 10px;align-items:stretch}
+.bcol{display:flex;flex-direction:column;min-width:170px}
+.bh{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#8fb2ff;text-align:center;margin-bottom:8px}
+.bm{flex:1;display:flex;flex-direction:column;justify-content:space-around;gap:12px}
+.match{background:#10265c;border:1px solid #2a5bd7;border-radius:8px;overflow:hidden}
+.match.clk{cursor:pointer}.match.clk:hover{border-color:#8fb2ff}
+.match.mine{box-shadow:0 0 0 2px var(--acc2)}
+.mrow{padding:6px 10px;font-size:13px;border-bottom:1px solid rgba(255,255,255,.12);min-height:30px}
+.mrow:last-child{border-bottom:0}
+.mrow.win{background:#1f5fd6;font-weight:700}.mrow.lose{opacity:.45}
+.dr{font-size:11px;color:var(--acc2);padding:2px 10px;background:rgba(0,0,0,.25)}
+.champ{text-align:center;font-size:38px;border:1px dashed #2a5bd7;border-radius:12px;padding:16px 8px}
+.champ div{font-size:14px;font-weight:700;margin-top:4px}
 </style>
 </head>
 <body>
@@ -89,8 +131,11 @@ summary{cursor:pointer;color:var(--acc2)}
   <h1><i class="pc w mini"></i><i class="pc b mini"></i>Shashka Liga</h1>
   <p>Hisobingizga kiring yoki yangi hisob oching.</p>
   <div class="tabs"><button class="ghost on" id="tabin">Kirish</button><button class="ghost" id="tabup">Ro'yxatdan o'tish</button></div>
-  <label for="fn">Ism</label><input id="fn" maxlength="20" autocomplete="given-name">
-  <label for="ln">Familya</label><input id="ln" maxlength="20" autocomplete="family-name">
+  <div id="namew" hidden>
+    <label for="fn">Ism</label><input id="fn" maxlength="20" autocomplete="given-name">
+    <label for="ln">Familya</label><input id="ln" maxlength="20" autocomplete="family-name">
+  </div>
+  <label for="un">Username</label><input id="un" maxlength="20" autocomplete="username" autocapitalize="none" placeholder="masalan: ali_2008">
   <label for="pw">Parol</label><input id="pw" type="password" autocomplete="current-password">
   <div id="pw2w" hidden><label for="pw2">Parolni takrorlang</label><input id="pw2" type="password" autocomplete="new-password"></div>
   <button id="go" style="margin-top:16px;width:100%">Kirish</button>
@@ -112,20 +157,26 @@ summary{cursor:pointer;color:var(--acc2)}
       <p class="mut">15 ta kompyuter raqib (boshlovchidan kuchligacha). Ulardan 8 tasi bilan o'ynaysiz, qolgan o'yinlar avtomatik hisoblanadi. Natijalaringiz saqlanadi.</p>
       <button id="ai">Boshlash</button>
     </div>
+    <div class="mcard">
+      <h2>Kubok (pley-off)</h2>
+      <p class="mut">Chempionlar ligasi kabi setka: 16 tagacha o'yinchi, har o'yinda yutgan keyingi bosqichga o'tadi. Kubok nomini yozing: bo'lsa qo'shilasiz, bo'lmasa yangisini ochasiz.</p>
+      <input id="cg" maxlength="30" placeholder="Kubok nomi">
+      <button id="joinc">Qo'shilish</button>
+    </div>
   </div>
   <div id="merr"></div>
-  <button class="ghost" id="out2">Chiqish</button>
+  <div class="hbtns"><button class="ghost" id="openProf2">Profil va do'stlar</button><button class="ghost" id="out2">Chiqish</button></div>
 </div>
 
 <div id="app" hidden>
   <header>
     <div class="brand"><i class="pc w mini"></i><i class="pc b mini"></i><span>Shashka Liga</span><span class="mut" style="font-family:inherit;font-weight:400">· <span id="hg"></span> · <span id="hn"></span></span></div>
-    <span><button class="ghost" id="back">Rejimni almashtirish</button> <button class="ghost" id="out">Chiqish</button></span>
+    <span class="hbtns"><button class="ghost" id="openProf">Profil</button> <button class="ghost" id="back">Rejimni almashtirish</button> <button class="ghost" id="out">Chiqish</button></span>
   </header>
   <main>
     <div>
       <section>
-        <h2>Ishtirokchilar</h2>
+        <h2 id="h2l">Ishtirokchilar</h2>
         <div id="lobby"></div>
       </section>
       <section style="margin-top:16px">
@@ -138,16 +189,25 @@ summary{cursor:pointer;color:var(--acc2)}
       <div id="board"></div>
       <div id="msg"></div>
     </section>
-    <section>
-      <h2>Liga jadvali</h2>
+    <section id="side">
+      <h2 id="h2r">Liga jadvali</h2>
       <div id="tbl"></div>
-      <details><summary>Qoidalar</summary>
+      <details id="rules"><summary>Qoidalar</summary>
         <p>Xalqaro shashka (10x10). G'alaba 3 ochko, durang 1, mag'lubiyat 0. Har kim 8 ta o'yin o'ynaydi, har raqib bilan bittadan. Urish majburiy: urmasdan boshqa dona yurilsa "Chippaki!" deyiladi va urishi kerak bo'lgan dona raqibga beriladi. Ikkala tomonda damkasiz bittadan dona qolsa, durang. Ochko teng bo'lsa, donalar farqi hal qiladi (g'alabada +qolgan donalar, mag'lubiyatda −raqibning qolgan donalari). Dastlabki 3 o'rin ko'k rangda.</p>
       </details>
     </section>
   </main>
 </div>
 
+<div id="modal" hidden>
+  <div class="mbox">
+    <button class="ghost close" id="mclose">✕</button>
+    <div class="tabs"><button class="ghost on" id="tprof">Profil</button><button class="ghost" id="tfr">Do'stlar</button></div>
+    <div id="mmsg"></div>
+    <div id="mbody"></div>
+    <input type="file" id="avf" accept="image/*" hidden>
+  </div>
+</div>
 <script src="engine.js"></script>
 <script>
 const MAXG=8;
@@ -155,7 +215,7 @@ const {dests}=Engine;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
-let meId,myName,players={},games={},cur=null,sel=null,sock=null,token=null,authed=false,lastEnter=null,regMode=false,curMode=null;
+let meId,myName,players={},games={},cur=null,sel=null,sock=null,token=null,authed=false,lastEnter=null,regMode=false,curMode=null,myUser,cupData=null,fr={friends:[],incoming:[],outgoing:[]},prof=null,viewP=null,sres=[],lastQ='',mtab='prof',pend=null,saving=false;
 
 /* ---------- Jadval ---------- */
 function table(){
@@ -221,7 +281,37 @@ function renderBoard(){
   $('#info').innerHTML=`<div class="pcards">${pl('w',g.white,wc)}${pl('b',g.black,bc)}</div><div class="st">${st}</div>`;
   $('#msg').textContent=g.msg||'';
 }
-const renderAll=()=>{renderTable();renderLobby();renderGames();renderBoard()};
+const renderAll=()=>{
+  if(cupData)renderCup();
+  else{$('#h2l').textContent='Ishtirokchilar';$('#h2r').textContent='Liga jadvali';$('#rules').hidden=false;renderTable();renderLobby()}
+  renderGames();renderBoard();
+};
+function roundName(i,R){const l=R-i;return l===1?'Final':l===2?'Yarim final':l===3?'Chorak final':l===4?'1/8 final':(i+1)+'-tur'}
+function matchHTML(m){
+  const row=(id,bye)=>`<div class="mrow${id&&m.winner===id?' win':''}${id&&m.winner&&m.winner!==id?' lose':''}">${id?esc(nm(id)):`<span class="mut">${bye?'dam olish':'—'}</span>`}</div>`;
+  const mine=(m.a===meId||m.b===meId)&&!m.winner;
+  return `<div class="match${mine?' mine':''}${m.gid?' clk':''}"${m.gid?` data-open="${m.gid}"`:''}>${row(m.a)}${row(m.b,m.a&&!m.b)}${m.draws?`<div class="dr">${m.draws} marta durang, qayta o'ynaladi</div>`:''}</div>`;
+}
+function bracketHTML(c){
+  if(!c.rounds.length)return '<div class="mut">Kubok hali boshlanmagan. Tashkilotchi boshlagach, qura bo\'yicha setka tuziladi.</div>';
+  const N=c.rounds[0].length*2,R=Math.log2(N);let cols='';
+  for(let i=0;i<R;i++){
+    const ms=c.rounds[i]||Array.from({length:N/2**(i+1)},()=>({}));
+    cols+=`<div class="bcol"><div class="bh">${roundName(i,R)}</div><div class="bm">${ms.map(matchHTML).join('')}</div></div>`;
+  }
+  cols+=`<div class="bcol"><div class="bh">Chempion</div><div class="bm"><div class="champ">🏆<div>${c.champion?esc(nm(c.champion)):'—'}</div></div></div></div>`;
+  return `<div class="bracket">${cols}</div>`;
+}
+function renderCup(){
+  const c=cupData,ids=Object.keys(players);
+  $('#h2l').textContent='Ishtirokchilar';$('#h2r').textContent='Kubok setkasi';$('#rules').hidden=true;
+  let h=ids.map(id=>`<div class="row"><span>${esc(nm(id))}${id===meId?' <span class="tag">siz</span>':''}${id===c.owner?' <span class="mut">(tashkilotchi)</span>':''}</span></div>`).join('');
+  if(c.status==='open'){
+    h+=`<div class="mut" style="margin:10px 0">${ids.length}/16 ishtirokchi</div>`;
+    h+=c.owner===meId?`<button id="cupstart" style="width:100%" ${ids.length<2?'disabled':''}>Kubokni boshlash</button>`:'<div class="mut">Tashkilotchi boshlashini kuting</div>';
+  }else if(c.status==='done')h+=`<div class="st">Chempion: ${esc(nm(c.champion))}</div>`;
+  $('#lobby').innerHTML=h;$('#tbl').innerHTML=bracketHTML(c);
+}
 
 /* ---------- Harakatlar ---------- */
 const send=o=>{if(sock&&sock.readyState===1)sock.send(JSON.stringify(o))};
@@ -258,6 +348,7 @@ function wsOpen(){
   });
 }
 function showErr(t){
+  if(!$('#modal').hidden){$('#mmsg').textContent=t;return}
   if(!$('#app').hidden)toast(t);
   else if(!$('#mode').hidden){$('#merr').textContent=t;lastEnter=null;ls.del('shashka_enter')}
   else $('#err').textContent=t;
@@ -265,41 +356,126 @@ function showErr(t){
 function onMsg(ev){
   const m=JSON.parse(ev.data);
   if(m.t==='authed'){
-    token=m.token;authed=true;meId=m.id;myName=m.name;ls.set('shashka_token',token);
+    token=m.token;authed=true;meId=m.id;myName=m.name;myUser=m.username;ls.set('shashka_token',token);
     if(lastEnter)send(lastEnter);else{$('#mhi').textContent='Salom, '+m.name;show('mode')}
   }else if(m.t==='noauth'){
     token=null;authed=false;ls.del('shashka_token');show('login');
   }else if(m.t==='state'){
-    players=m.players;games=m.games;
-    if(curMode!==m.mode+(m.league||'')){curMode=m.mode+(m.league||'');cur=null;sel=null}
-    if($('#app').hidden){show('app');$('#hg').textContent=m.mode==='ai'?'AI bilan liga':'Liga: '+m.league;$('#hn').textContent='Siz: '+myName}
-    if(!cur||!games[cur]){const f=Object.entries(games).find(([,x])=>x.status==='playing'&&(x.white===meId||x.black===meId));cur=f?f[0]:null}
+    players=m.players;games=m.games;cupData=m.cup||null;
+    const key=m.mode+(m.league||'');
+    if(curMode!==key){curMode=key;cur=null;sel=null}
+    if($('#app').hidden){show('app');$('#hg').textContent=m.mode==='ai'?'AI bilan liga':(m.mode==='cup'?'Kubok: ':'Liga: ')+(m.league||'');$('#hn').textContent='Siz: '+myName}
+    document.querySelector('main').className=m.mode==='cup'?'cup':'';
+    const mp=Object.entries(games).find(([,x])=>x.status==='playing'&&(x.white===meId||x.black===meId)),g0=games[cur];
+    if(!g0||(g0.status==='done'&&mp&&(g0.white===meId||g0.black===meId)))cur=mp?mp[0]:(g0?cur:null);
     renderAll();
   }else if(m.t==='opened'){cur=m.gid;sel=null;renderAll()}
+  else if(m.t==='profile'){
+    if(m.user.id===meId){prof=m.user;const was=saving;saving=false;if(was)pend=null;renderModal();if(was&&$('#sv'))$('#sv').textContent='Saqlandi ✓'}
+    else{viewP=m.user;renderModal()}
+  }else if(m.t==='sres'){sres=m.users;if(!$('#modal').hidden&&mtab==='fr'&&!viewP)renderModal()}
+  else if(m.t==='friends'){
+    fr=m;updBadge();
+    if(!$('#modal').hidden&&(mtab==='fr'||viewP)){
+      if(lastQ)send({t:'searchUser',q:lastQ});
+      if(viewP)send({t:'getProfile',id:viewP.id});
+      renderModal();
+    }
+  }
   else if(m.t==='error')showErr(m.msg);
 }
 const err=t=>$('#err').textContent=t;
 function setTab(reg){
-  regMode=reg;$('#pw2w').hidden=!reg;$('#go').textContent=reg?"Ro'yxatdan o'tish":'Kirish';
+  regMode=reg;$('#pw2w').hidden=!reg;$('#namew').hidden=!reg;$('#go').textContent=reg?"Ro'yxatdan o'tish":'Kirish';
   $('#tabin').classList.toggle('on',!reg);$('#tabup').classList.toggle('on',reg);
   $('#pw').autocomplete=reg?'new-password':'current-password';err('');
 }
 $('#tabin').onclick=()=>setTab(false);
 $('#tabup').onclick=()=>setTab(true);
 $('#go').onclick=async()=>{
-  const first=$('#fn').value.trim(),last=$('#ln').value.trim(),pass=$('#pw').value;
-  if(!first||!last||!pass)return err('Ism, familya va parolni kiriting');
+  const first=$('#fn').value.trim(),last=$('#ln').value.trim(),username=$('#un').value.trim(),pass=$('#pw').value;
+  if(!username||!pass||(regMode&&(!first||!last)))return err(regMode?'Ism, familya, username va parolni kiriting':'Username va parolni kiriting');
   if(regMode&&pass!==$('#pw2').value)return err('Parollar bir xil emas');
   err('');
   try{await wsOpen()}catch(e){return err(e.message)}
-  send({t:regMode?'register':'login',first,last,pass});
+  send(regMode?{t:'register',first,last,username,pass}:{t:'login',username,pass});
 };
 function enter(m){lastEnter=m;ls.set('shashka_enter',JSON.stringify(m));$('#merr').textContent='';cur=null;sel=null;send(m)}
 $('#joinl').onclick=()=>{const g=$('#lg').value.trim();if(!g)return $('#merr').textContent='Liga nomini kiriting';enter({t:'joinLeague',g})};
 $('#ai').onclick=()=>enter({t:'startAI'});
+$('#joinc').onclick=()=>{const g=$('#cg').value.trim();if(!g)return $('#merr').textContent='Kubok nomini kiriting';enter({t:'joinCup',g})};
 $('#back').onclick=()=>{lastEnter=null;ls.del('shashka_enter');send({t:'leave'});cur=null;sel=null;curMode=null;$('#mhi').textContent='Salom, '+myName;show('mode')};
 const logout=()=>{authed=false;ls.del('shashka_token');ls.del('shashka_enter');location.reload()};
 $('#out').onclick=logout;$('#out2').onclick=logout;
+/* ---------- Profil va do'stlar ---------- */
+const ini=n=>String(n).split(' ').map(x=>x[0]||'').slice(0,2).join('').toUpperCase();
+const avHTML=(src,name,cls='')=>src&&src.startsWith('data:image/')?`<img class="av ${cls}" src="${esc(src)}" alt="">`:`<div class="av ini ${cls}">${esc(ini(name))}</div>`;
+const updBadge=()=>{const t='Profil'+(fr.incoming.length?' · '+fr.incoming.length:'');$('#openProf').textContent=t;$('#openProf2').textContent="Profil va do'stlar"+(fr.incoming.length?' · '+fr.incoming.length:'')};
+const statsHTML=s=>`<div class="stats"><div class="stat"><b>${s.played}</b><span>O'yin</span></div><div class="stat w"><b>${s.wins}</b><span>G'alaba</span></div><div class="stat l"><b>${s.losses}</b><span>Mag'lubiyat</span></div><div class="stat d"><b>${s.draws}</b><span>Durang</span></div></div>`;
+const btn=(act,id,txt,ghost)=>`<button class="${ghost?'ghost':''}" data-act="${act}" data-id="${esc(id)}">${txt}</button>`;
+function relBtns(u){
+  const r=u.relation;
+  return r==='friend'?btn('rem',u.id,"Do'stlikdan chiqarish",1):r==='out'?btn('cancel',u.id,"Taklifni bekor qilish",1):r==='in'?btn('acc',u.id,'Qabul qilish')+btn('dec',u.id,'Rad etish',1):btn('req',u.id,"Do'st qo'shish");
+}
+const urow=(u,btns)=>`<div class="urow">${avHTML(u.avatar,u.name,'sm')}<div class="ui"><b>${esc(u.name)}</b><div class="mut">@${esc(u.username)}</div></div><div class="ua">${btns}</div></div>`;
+function renderModal(){
+  if($('#modal').hidden)return;
+  $('#tprof').classList.toggle('on',mtab==='prof'&&!viewP);$('#tfr').classList.toggle('on',mtab==='fr'||!!viewP);
+  let h='';
+  if(viewP){
+    const U=viewP;
+    h=`<button class="ghost" data-act="back" style="margin-bottom:12px">← Orqaga</button><div class="ph">${avHTML(U.avatar,U.name)}<div><h2>${esc(U.name)}</h2><div class="mut">@${esc(U.username)}</div></div></div>`+
+      (U.bio?`<p>${esc(U.bio)}</p>`:'<p class="mut">Bio yozilmagan</p>')+`<div class="hbtns">${relBtns(U)}</div>`+statsHTML(U.stats);
+  }else if(mtab==='prof'){
+    const U=prof;
+    if(!U)h='<div class="mut">Yuklanmoqda...</div>';
+    else h=`<div class="ph"><div class="avw" data-act="pick" id="avbox">${avHTML(pend!==null?pend:U.avatar,U.name)}<span class="avedit">O'zgartirish</span></div><div><h2>${esc(U.name)}</h2><div class="mut">@${esc(U.username)}</div></div></div>
+      <label for="bio">Bio</label><textarea id="bio" maxlength="200" placeholder="O'zingiz haqingizda qisqacha yozing">${esc(U.bio)}</textarea>
+      <div style="margin-top:10px;display:flex;gap:10px;align-items:center"><button data-act="save">Saqlash</button><span id="sv" class="mut"></span></div>${statsHTML(U.stats)}`;
+  }else{
+    h=`<div class="srch"><input id="sq" placeholder="Username bo'yicha qidirish" value="${esc(lastQ)}" autocapitalize="none"><button data-act="search">Qidirish</button></div>`;
+    if(lastQ)h+=sres.length?sres.map(u=>urow(u,btn('view',u.id,'Profil',1)+relBtns(u))).join(''):'<div class="mut">Hech kim topilmadi</div>';
+    if(fr.incoming.length)h+=`<h3>Do'stlik so'rovlari</h3>`+fr.incoming.map(u=>urow(u,btn('view',u.id,'Profil',1)+btn('acc',u.id,'Qabul')+btn('dec',u.id,'Rad',1))).join('');
+    h+=`<h3>Do'stlarim (${fr.friends.length})</h3>`+(fr.friends.length?fr.friends.map(u=>urow(u,btn('view',u.id,'Profil',1)+btn('rem',u.id,"O'chirish",1))).join(''):'<div class="mut">Hozircha do\'st yo\'q. Username bo\'yicha qidiring.</div>');
+    if(fr.outgoing.length)h+=`<h3>Yuborilgan takliflar</h3>`+fr.outgoing.map(u=>urow(u,btn('view',u.id,'Profil',1)+btn('cancel',u.id,'Bekor qilish',1))).join('');
+  }
+  $('#mbody').innerHTML=h;
+}
+function openModal(tab){mtab=tab;viewP=null;pend=null;$('#mmsg').textContent='';$('#modal').hidden=false;send({t:'getProfile'});renderModal()}
+const closeModal=()=>{$('#modal').hidden=true;viewP=null};
+$('#openProf').onclick=()=>openModal('prof');
+$('#openProf2').onclick=()=>openModal('prof');
+$('#mclose').onclick=closeModal;
+$('#tprof').onclick=()=>{mtab='prof';viewP=null;send({t:'getProfile'});renderModal()};
+$('#tfr').onclick=()=>{mtab='fr';viewP=null;renderModal()};
+function doSearch(){lastQ=$('#sq').value.trim();if(lastQ.length<2){sres=[];renderModal();return}send({t:'searchUser',q:lastQ})}
+$('#modal').addEventListener('click',e=>{
+  if(e.target.id==='modal'){closeModal();return}
+  const t=e.target.closest('[data-act]');if(!t)return;
+  const a=t.dataset.act,id=t.dataset.id;$('#mmsg').textContent='';
+  if(a==='pick')$('#avf').click();
+  else if(a==='save'){saving=true;send({t:'saveProfile',bio:$('#bio').value,avatar:pend})}
+  else if(a==='search')doSearch();
+  else if(a==='view')send({t:'getProfile',id});
+  else if(a==='back'){viewP=null;renderModal()}
+  else if(a==='req')send({t:'friendReq',to:id});
+  else if(a==='acc')send({t:'friendAccept',from:id});
+  else if(a==='dec')send({t:'friendDecline',from:id});
+  else if(a==='rem')send({t:'friendRemove',id});
+  else if(a==='cancel')send({t:'friendCancel',to:id});
+});
+$('#modal').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='sq')doSearch()});
+$('#avf').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{const im=new Image();im.onload=()=>{
+    const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d'),sz=Math.min(im.width,im.height);
+    x.drawImage(im,(im.width-sz)/2,(im.height-sz)/2,sz,sz,0,0,128,128);
+    pend=c.toDataURL('image/jpeg',.8);const b=$('#avbox');if(b)b.innerHTML=avHTML(pend,prof.name)+'<span class="avedit">O\'zgartirish</span>';
+  };im.src=r.result};
+  r.readAsDataURL(f);e.target.value='';
+};
+document.addEventListener('click',e=>{if(e.target.closest('#cupstart'))send({t:'cupStart'})});
 setInterval(()=>send({t:'ping'}),25000);
 (async()=>{
   token=ls.get('shashka_token');
