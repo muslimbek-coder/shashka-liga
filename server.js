@@ -5,7 +5,8 @@ const E = require('./public/engine.js');
 const PORT = process.env.PORT || 3000;
 const FILE = path.join(process.env.DATA_DIR || __dirname, 'data.json');
 const MAXP = 16, MAXG = 8;
-let state = { users: {}, sessions: {}, groups: {} }, pg = null, timer = null;
+process.on('uncaughtException', e => console.error(e));
+let state = { users: {}, sessions: {}, groups: {}, cups: {} }, pg = null, timer = null;
 
 /* ---------- Saqlash ---------- */
 async function load() {
@@ -18,7 +19,7 @@ async function load() {
   } else {
     try { state = JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch (e) {}
   }
-  state.users = state.users || {}; state.sessions = state.sessions || {}; state.groups = state.groups || {};
+  state.users = state.users || {}; state.sessions = state.sessions || {}; state.groups = state.groups || {}; state.cups = state.cups || {};
 }
 function save() {
   if (timer) return;
@@ -116,13 +117,13 @@ const server = http.createServer((req, res) => {
 });
 const wss = new WebSocketServer({ server });
 const G = g => state.groups[g] || (state.groups[g] = { players: {}, games: {} });
-const ctxFor = s => s.mode === 'online' ? G(s.g) : s.mode === 'ai' && state.users[s.uid] ? state.users[s.uid].ai : null;
+const ctxFor = s => s.mode === 'online' ? G(s.g) : s.mode === 'cup' ? state.cups[s.g] || null : s.mode === 'ai' && state.users[s.uid] ? state.users[s.uid].ai : null;
 function pushTo(s) {
   const c = ctxFor(s);
-  if (c && s.readyState === 1) s.send(JSON.stringify({ t: 'state', mode: s.mode, league: s.g, players: c.players, games: c.games }));
+  if (c && s.readyState === 1) s.send(JSON.stringify({ t: 'state', mode: s.mode, league: s.g, players: c.players, games: c.games, cup: s.mode === 'cup' ? { name: c.name, owner: c.owner, status: c.status, rounds: c.rounds, champion: c.champion } : undefined }));
 }
 const pushAll = pred => { for (const c of wss.clients) if (pred(c)) pushTo(c); };
-const pushSame = s => pushAll(c => s.mode === 'online' ? (c.mode === 'online' && c.g === s.g) : (c.mode === 'ai' && c.uid === s.uid));
+const pushSame = s => pushAll(c => s.mode === 'ai' ? (c.mode === 'ai' && c.uid === s.uid) : (c.mode === s.mode && c.g === s.g));
 const count = (ctx, id) => Object.values(ctx.games).filter(x => x.white === id || x.black === id).length;
 const paired = (ctx, a, b) => Object.values(ctx.games).some(x => (x.white === a && x.black === b) || (x.white === b && x.black === a));
 
@@ -141,34 +142,94 @@ function aiTurn(sock, gid) {
   }, 700);
 }
 
+/* ---------- Profil, do'stlar, kubok ---------- */
+const getU = id => Object.prototype.hasOwnProperty.call(state.users, id) ? state.users[id] : null;
+const fr = u => { u.friends = u.friends || []; u.reqIn = u.reqIn || []; u.reqOut = u.reqOut || []; return u; };
+const card = id => { const x = getU(id); return x ? { id: x.id, username: x.username || x.id, name: x.name, avatar: x.avatar || '' } : null; };
+const relation = (me, o) => { fr(me); return me.id === o.id ? 'self' : me.friends.includes(o.id) ? 'friend' : me.reqOut.includes(o.id) ? 'out' : me.reqIn.includes(o.id) ? 'in' : 'none'; };
+function stats(uid) {
+  let w = 0, l = 0, d = 0;
+  const scan = gs => { for (const g of Object.values(gs || {})) {
+    if (g.sim || g.status !== 'done' || (g.white !== uid && g.black !== uid)) continue;
+    if (g.result === 'd') d++; else if ((g.result === 'w') === (g.white === uid)) w++; else l++;
+  } };
+  Object.values(state.groups).forEach(x => scan(x.games));
+  Object.values(state.cups).forEach(x => scan(x.games));
+  const u = getU(uid); if (u && u.ai) scan(u.ai.games);
+  return { played: w + l + d, wins: w, losses: l, draws: d };
+}
+const profile = (me, o) => ({ ...card(o.id), bio: o.bio || '', stats: stats(o.id), relation: relation(me, o) });
+function sendFriends(uid) {
+  const u = getU(uid); if (!u) return; fr(u);
+  const s = JSON.stringify({ t: 'friends', friends: u.friends.map(card).filter(Boolean), incoming: u.reqIn.map(card).filter(Boolean), outgoing: u.reqOut.map(card).filter(Boolean) });
+  for (const c of wss.clients) if (c.uid === uid && c.readyState === 1) c.send(s);
+}
+const rid = () => Math.random().toString(36).slice(2, 10);
+function mkGame(ctx, a, b) {
+  const w = Math.random() < 0.5, gid = rid();
+  ctx.games[gid] = { white: w ? a : b, black: w ? b : a, board: E.initBoard(), turn: 'w', status: 'playing', result: '', msg: '', created: Date.now() };
+  return gid;
+}
+function cupRound(c, ids) {
+  const ms = [];
+  for (let k = 0; k < ids.length; k += 2) {
+    const a = ids[k], b = ids[k + 1];
+    ms.push(b == null ? { a, b: null, winner: a, gid: null, draws: 0 } : { a, b, winner: null, gid: mkGame(c, a, b), draws: 0 });
+  }
+  c.rounds.push(ms);
+}
+function cupStart(c) {
+  const ids = Object.keys(c.players).sort(() => Math.random() - 0.5), n = ids.length;
+  let N = 2; while (N < n) N *= 2;
+  const first = ids.slice(0, N / 2), rest = ids.slice(N / 2), slots = [];
+  for (let k = 0; k < N / 2; k++) { slots.push(first[k]); slots.push(rest[k] == null ? null : rest[k]); }
+  c.status = 'running'; cupRound(c, slots);
+}
+function cupAdvance(c) {
+  const last = c.rounds[c.rounds.length - 1];
+  if (last.some(m => !m.winner)) return;
+  const w = last.map(m => m.winner);
+  if (w.length === 1) { c.status = 'done'; c.champion = w[0]; return; }
+  cupRound(c, w);
+}
+function cupAfter(c, gid) {
+  const g = c.games[gid]; if (!g || g.status !== 'done') return;
+  const m = c.rounds[c.rounds.length - 1].find(x => x.gid === gid); if (!m) return;
+  if (g.result === 'd') { m.draws++; m.gid = mkGame(c, m.a, m.b); }
+  else m.winner = g.result === 'w' ? g.white : g.black;
+  cupAdvance(c);
+}
+
 wss.on('connection', sock => {
   const send = o => sock.readyState === 1 && sock.send(JSON.stringify(o));
   const fail = msg => send({ t: 'error', msg });
   const authOk = (u, token) => {
     if (!token) { token = crypto.randomBytes(24).toString('hex'); state.sessions[token] = u.id; save(); }
-    sock.uid = u.id; send({ t: 'authed', token, name: u.name, id: u.id });
+    sock.uid = u.id; send({ t: 'authed', token, name: u.name, id: u.id, username: u.username || u.id }); sendFriends(u.id);
   };
   sock.on('message', raw => {
     let m; try { m = JSON.parse(raw); } catch (e) { return; }
     if (m.t === 'ping') return;
 
     if (m.t === 'register' || m.t === 'login') {
-      const first = String(m.first || '').trim().replace(/\s+/g, ' ').slice(0, 20), last = String(m.last || '').trim().replace(/\s+/g, ' ').slice(0, 20), pass = String(m.pass || '');
-      if (first.length < 2 || last.length < 2) return fail('Ism va familyani kiriting');
-      const id = (first + ' ' + last).toLowerCase(), u = state.users[id];
+      const un = String(m.username || '').trim().toLowerCase().replace(/^@/, ''), pass = String(m.pass || '');
       if (m.t === 'register') {
-        if (u) return fail("Bu ism-familya allaqachon ro'yxatdan o'tgan");
+        const first = String(m.first || '').trim().replace(/\s+/g, ' ').slice(0, 20), last = String(m.last || '').trim().replace(/\s+/g, ' ').slice(0, 20);
+        if (first.length < 2 || last.length < 2) return fail('Ism va familyani kiriting');
+        if (!/^[a-z0-9_.]{3,20}$/.test(un)) return fail("Username 3-20 ta belgi bo'lsin: lotin harflari, raqam, _ yoki .");
+        if (getU(un)) return fail('Bu username band');
         if (pass.length < 4) return fail("Parol kamida 4 ta belgidan iborat bo'lsin");
         const salt = crypto.randomBytes(16).toString('hex');
-        state.users[id] = { id, name: first + ' ' + last, salt, hash: hash(pass, salt), created: Date.now() };
-        save(); return authOk(state.users[id]);
+        state.users[un] = { id: un, username: un, name: first + ' ' + last, salt, hash: hash(pass, salt), bio: '', avatar: '', friends: [], reqIn: [], reqOut: [], created: Date.now() };
+        save(); return authOk(state.users[un]);
       }
-      if (!u || !same(hash(pass, u.salt), u.hash)) return fail("Ism-familya yoki parol noto'g'ri");
+      const u = getU(un);
+      if (!u || !same(hash(pass, u.salt), u.hash)) return fail("Username yoki parol noto'g'ri");
       return authOk(u);
     }
     if (m.t === 'resume') {
       const uid = state.sessions[String(m.token)];
-      if (!uid || !state.users[uid]) return send({ t: 'noauth' });
+      if (!uid || !getU(uid)) return send({ t: 'noauth' });
       return authOk(state.users[uid], String(m.token));
     }
     if (!sock.uid) return send({ t: 'noauth' });
@@ -194,10 +255,65 @@ wss.on('connection', sock => {
       for (const gid in u.ai.games) aiTurn(sock, gid);
       return;
     }
+    if (m.t === 'joinCup') {
+      const nameRaw = String(m.g || '').trim().slice(0, 30), g = nameRaw.toLowerCase().replace(/[\/\s]+/g, '_');
+      if (!g) return fail('Kubok nomini kiriting');
+      let c = Object.prototype.hasOwnProperty.call(state.cups, g) ? state.cups[g] : null;
+      if (!c) c = state.cups[g] = { name: nameRaw, owner: u.id, status: 'open', players: {}, games: {}, rounds: [], champion: null };
+      if (!c.players[u.id]) {
+        if (c.status !== 'open') return fail('Bu kubok allaqachon boshlangan');
+        if (Object.keys(c.players).length >= MAXP) return fail(`Kubokda ${MAXP} ta ishtirokchi to'lgan`);
+        c.players[u.id] = { name: u.name }; save();
+      }
+      sock.mode = 'cup'; sock.g = g;
+      return pushSame(sock);
+    }
+    if (m.t === 'cupStart') {
+      const c = sock.mode === 'cup' ? ctxFor(sock) : null;
+      if (!c || c.owner !== u.id || c.status !== 'open') return;
+      if (Object.keys(c.players).length < 2) return fail('Kamida 2 ta ishtirokchi kerak');
+      cupStart(c); save(); return pushSame(sock);
+    }
+    if (m.t === 'getProfile') {
+      const o = getU(String(m.id || u.id)); if (!o) return fail('Foydalanuvchi topilmadi');
+      return send({ t: 'profile', user: profile(u, o) });
+    }
+    if (m.t === 'saveProfile') {
+      u.bio = String(m.bio || '').slice(0, 200);
+      if (typeof m.avatar === 'string') {
+        if (m.avatar === '') u.avatar = '';
+        else if (m.avatar.startsWith('data:image/jpeg;base64,') && m.avatar.length <= 60000) u.avatar = m.avatar;
+      }
+      save(); return send({ t: 'profile', user: profile(u, u) });
+    }
+    if (m.t === 'searchUser') {
+      const q = String(m.q || '').trim().toLowerCase().replace(/^@/, '');
+      if (q.length < 2) return send({ t: 'sres', q, users: [] });
+      const un = x => x.username || x.id;
+      const out = Object.values(state.users).filter(x => x.id !== u.id && un(x).startsWith(q))
+        .sort((x, y) => (un(x) === q ? 0 : 1) - (un(y) === q ? 0 : 1)).slice(0, 8)
+        .map(x => ({ ...card(x.id), relation: relation(u, x) }));
+      return send({ t: 'sres', q, users: out });
+    }
+    if (['friendReq', 'friendAccept', 'friendDecline', 'friendRemove', 'friendCancel'].includes(m.t)) {
+      const o = getU(String(m.to || m.from || m.id || ''));
+      if (!o || o.id === u.id) return;
+      const a = fr(u), b = fr(o);
+      const rm = (arr, x) => { const i = arr.indexOf(x); if (i >= 0) arr.splice(i, 1); };
+      const add = (arr, x) => { if (!arr.includes(x)) arr.push(x); };
+      const clear = () => { rm(a.reqIn, o.id); rm(a.reqOut, o.id); rm(b.reqIn, u.id); rm(b.reqOut, u.id); };
+      const mk = () => { clear(); add(a.friends, o.id); add(b.friends, u.id); };
+      if (m.t === 'friendReq') { if (a.friends.includes(o.id)) return; if (a.reqIn.includes(o.id)) mk(); else { add(a.reqOut, o.id); add(b.reqIn, u.id); } }
+      else if (m.t === 'friendAccept') { if (a.reqIn.includes(o.id)) mk(); }
+      else if (m.t === 'friendRemove') { rm(a.friends, o.id); rm(b.friends, u.id); }
+      else clear();
+      save(); sendFriends(u.id); sendFriends(o.id); return;
+    }
     const ctx = ctxFor(sock);
     if (!ctx) return;
 
     if (m.t === 'challenge') {
+      if (sock.mode === 'cup') return;
       const oid = String(m.oid);
       if (!ctx.players[oid] || oid === sock.uid) return fail('Ishtirokchi topilmadi');
       if (paired(ctx, sock.uid, oid)) return fail("Siz bu ishtirokchi bilan o'ynagansiz");
@@ -216,6 +332,7 @@ wss.on('connection', sock => {
       if (!(from >= 0 && from < 100 && to >= 0 && to < 100)) return;
       if (b[from] === '.' || b[from].toLowerCase() !== col || !E.dests(b, col, from).includes(to)) return fail('Bunday yurish mumkin emas');
       Object.assign(g, E.play(g, from, to, u.name));
+      if (sock.mode === 'cup') cupAfter(ctx, m.gid);
       save(); pushSame(sock);
       return aiTurn(sock, m.gid);
     }
