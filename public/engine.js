@@ -1,6 +1,7 @@
 (function(root){
 
 const DIRS=[[-1,-1],[-1,1],[1,-1],[1,1]];
+const KING_ENDGAME_LIMIT=40;
 const inb=(r,c)=>r>=0&&r<10&&c>=0&&c<10;
 const sq=i=>String.fromCharCode(97+i%10)+(10-Math.floor(i/10));
 function initBoard(){let s='';for(let r=0;r<10;r++)for(let c=0;c<10;c++)s+=(r+c)%2?(r<4?'b':r>5?'w':'.'):'.';return s}
@@ -51,6 +52,7 @@ function dests(b,col,from){
 }
 function play(g,from,to,name){
   const col=g.turn,opp=col==='w'?'b':'w',b=g.board.split('');
+  const beforeCount=b.filter(p=>p!=='.').length;
   const caps=allCaps(b,col);
   const s=caps.find(x=>x.from===from&&x.path[x.path.length-1]===to);
   const p=b[from];b[from]='.';
@@ -66,13 +68,23 @@ function play(g,from,to,name){
   }
   const cnt=c=>b.filter(x=>x.toLowerCase()===c).length;
   const wc=cnt('w'),bc=cnt('b');
+  const kingsOnly=b.every(piece=>piece==='.'||piece==='W'||piece==='B');
+  const afterCount=wc+bc;
+  const kingMoves=kingsOnly?(afterCount<beforeCount?0:(g.kingMoves||0)+1):0;
   let status='playing',result='';
   if(wc===1&&bc===1&&!b.includes('W')&&!b.includes('B')){status='done';result='d'}
   else if(cnt(opp)===0||!hasMove(b,opp)){status='done';result=col}
-  return {board:b.join(''),turn:status==='playing'?opp:col,status,result,wl:wc,bl:bc,msg};
+  else if(kingsOnly&&kingMoves>=KING_ENDGAME_LIMIT){
+    status='done';
+    result=wc===bc?'d':wc>bc?'w':'b';
+    msg=wc===bc
+      ?`Damkalar ${KING_ENDGAME_LIMIT} yurish davomida donani urmadi. O'yin durang.`
+      :`Damkalar ${KING_ENDGAME_LIMIT} yurish davomida donani urmadi. Donasi ko'p tomon g'alaba qozondi.`;
+  }
+  return {board:b.join(''),turn:status==='playing'?opp:col,status,result,wl:wc,bl:bc,msg,kingMoves};
 }
 
 
-const E={initBoard,allCaps,simple,hasMove,dests,play,sq};
+const E={initBoard,allCaps,simple,hasMove,dests,play,sq,KING_ENDGAME_LIMIT};
 if(typeof module!=='undefined'&&module.exports)module.exports=E;else root.Engine=E;
 })(typeof self!=='undefined'?self:this);

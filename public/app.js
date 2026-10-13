@@ -58,7 +58,7 @@ function renderBoard(){
   let h='';
   for(let k=0;k<100;k++){
     const i=flip?99-k:k,r=Math.floor(i/10),c=i%10,p=b[i],dark=(r+c)%2;
-    h+=`<div class="sq ${dark?'d':'l'}${i===sel?' sel':''}${d.has(i)?' dst':''}" data-i="${i}">${k%10===0?`<b class="rk">${10-r}</b>`:''}${k>=90?`<b class="fl">${'abcdefghij'[c]}</b>`:''}${p!=='.'?`<i class="pc ${p.toLowerCase()}">${p===p.toUpperCase()?'♛':''}</i>`:''}</div>`;
+    h+=`<div class="sq ${dark?'d':'l'}${i===sel?' sel':''}${d.has(i)?' dst':''}" data-i="${i}">${k%10===0?`<b class="rk">${10-r}</b>`:''}${k>=90?`<b class="fl">${'abcdefghij'[c]}</b>`:''}${p!=='.'?`<i class="pc ${p.toLowerCase()}">${p===p.toUpperCase()?'<span class="crown">♛</span>':''}</i>`:''}</div>`;
   }
   $('#board').innerHTML=h;
   const wc=b.filter(x=>x.toLowerCase()==='w').length,bc=b.filter(x=>x.toLowerCase()==='b').length;
