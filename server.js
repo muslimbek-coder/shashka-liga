@@ -6,7 +6,8 @@ const PORT = process.env.PORT || 3000;
 const FILE = path.join(process.env.DATA_DIR || __dirname, 'data.json');
 const MAXP = 16, MAXG = 8;
 process.on('uncaughtException', e => console.error(e));
-let state = { users: {}, sessions: {}, groups: {}, cups: {} }, pg = null, timer = null;
+let state = { users: {}, sessions: {}, groups: {}, cups: {}, duels: {} }, pg = null, timer = null;
+const invitations = new Map();
 
 /* ---------- Saqlash ---------- */
 async function load() {
@@ -19,7 +20,7 @@ async function load() {
   } else {
     try { state = JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch (e) {}
   }
-  state.users = state.users || {}; state.sessions = state.sessions || {}; state.groups = state.groups || {}; state.cups = state.cups || {};
+  state.users = state.users || {}; state.sessions = state.sessions || {}; state.groups = state.groups || {}; state.cups = state.cups || {}; state.duels = state.duels || {};
 }
 function save() {
   if (timer) return;
@@ -108,24 +109,54 @@ function newAILeague(u) {
 
 /* ---------- Server ---------- */
 const server = http.createServer((req, res) => {
-  const f = req.url.split('?')[0] === '/engine.js' ? 'engine.js' : 'index.html';
+  const requested = req.url.split('?')[0];
+  const allowed = new Set([
+    '/', '/index.html', '/engine.js', '/styles.css', '/app.js', '/pages.js',
+    '/pages/login.html', '/pages/modes.html', '/pages/game.html',
+    '/pages/profile.html', '/pages/invitation.html'
+  ]);
+  if (!allowed.has(requested)) { res.writeHead(404); return res.end(); }
+  const f = requested === '/' ? 'index.html' : requested.slice(1);
   fs.readFile(path.join(__dirname, 'public', f), (e, d) => {
     if (e) { res.writeHead(404); return res.end(); }
-    res.writeHead(200, { 'Content-Type': f.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    const type = f.endsWith('.js') ? 'text/javascript; charset=utf-8' : f.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/html; charset=utf-8';
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache' });
     res.end(d);
   });
 });
 const wss = new WebSocketServer({ server });
 const G = g => state.groups[g] || (state.groups[g] = { players: {}, games: {} });
-const ctxFor = s => s.mode === 'online' ? G(s.g) : s.mode === 'cup' ? state.cups[s.g] || null : s.mode === 'ai' && state.users[s.uid] ? state.users[s.uid].ai : null;
+const ctxFor = s => s.mode === 'online' ? state.groups[s.g] || null : s.mode === 'cup' ? state.cups[s.g] || null : s.mode === 'duel' ? state.duels[s.g] || null : s.mode === 'aicup' && state.users[s.uid] ? state.users[s.uid].aiCup : s.mode === 'ai' && state.users[s.uid] ? state.users[s.uid].ai : null;
 function pushTo(s) {
   const c = ctxFor(s);
-  if (c && s.readyState === 1) s.send(JSON.stringify({ t: 'state', mode: s.mode, league: s.g, players: c.players, games: c.games, cup: s.mode === 'cup' ? { name: c.name, owner: c.owner, status: c.status, rounds: c.rounds, champion: c.champion } : undefined }));
+  if (c && s.readyState === 1) s.send(JSON.stringify({ t: 'state', mode: s.mode, league: c.name || s.g, roomId: c.id || s.g, visibility: c.visibility || 'public', players: c.players, games: c.games, cup: s.mode === 'cup' || s.mode === 'aicup' ? { name: c.name, owner: c.owner, status: c.status, rounds: c.rounds, champion: c.champion, id: c.id, ai: s.mode === 'aicup' } : undefined }));
 }
 const pushAll = pred => { for (const c of wss.clients) if (pred(c)) pushTo(c); };
-const pushSame = s => pushAll(c => s.mode === 'ai' ? (c.mode === 'ai' && c.uid === s.uid) : (c.mode === s.mode && c.g === s.g));
+const pushSame = s => pushAll(c => s.mode === 'ai' || s.mode === 'aicup' ? (c.mode === s.mode && c.uid === s.uid) : (c.mode === s.mode && c.g === s.g));
 const count = (ctx, id) => Object.values(ctx.games).filter(x => x.white === id || x.black === id).length;
 const paired = (ctx, a, b) => Object.values(ctx.games).some(x => (x.white === a && x.black === b) || (x.white === b && x.black === a));
+const isPlaying = uid => [...Object.values(state.groups), ...Object.values(state.cups), ...Object.values(state.duels), ...Object.values(state.users[uid] && state.users[uid].ai ? [state.users[uid].ai] : []), ...Object.values(state.users[uid] && state.users[uid].aiCup ? [state.users[uid].aiCup] : [])]
+  .some(c => Object.values(c.games || {}).some(g => g.status === 'playing' && (g.white === uid || g.black === uid)));
+const online = uid => [...wss.clients].some(c => c.readyState === 1 && c.uid === uid);
+const presence = uid => !online(uid) ? 'offline' : isPlaying(uid) ? 'playing' : 'online';
+function broadcastPresence(uid) {
+  const u = getU(uid);
+  if (!u) return;
+  for (const friendId of fr(u).friends) sendFriends(friendId);
+  sendFriends(uid);
+}
+function roomList(kind, uid) {
+  const rooms = kind === 'cup' ? state.cups : state.groups;
+  return Object.entries(rooms).filter(([, c]) => c.visibility !== 'private').map(([id, c]) => ({
+    id, name: c.name || id.replace(/_/g, ' '), players: Object.keys(c.players || {}).length,
+    max: MAXP, status: c.status || 'open', kind, joined: Boolean(c.players && c.players[uid])
+  })).sort((a, b) => a.name.localeCompare(b.name));
+}
+function uniqueRoomId(kind, rooms) {
+  let id;
+  do { id = `${kind === 'cup' ? 'C' : 'L'}-${rid().slice(0, 6).toUpperCase()}`; } while (rooms[id]);
+  return id;
+}
 
 function aiTurn(sock, gid) {
   const ctx = ctxFor(sock), g = ctx && ctx.games[gid];
@@ -138,8 +169,20 @@ function aiTurn(sock, gid) {
     const mv = aiPick(g, ctx.players[aiId].lvl);
     if (!mv) return;
     Object.assign(g, E.play(g, mv[0], mv[1], ctx.players[aiId].name));
+    if (sock.mode === 'aicup') cupAfter(ctx, gid);
     save(); pushSame(sock);
+    broadcastPresence(g.white); broadcastPresence(g.black);
+    if (sock.mode === 'aicup') runAiTurns(sock);
   }, 700);
+}
+function runAiTurns(sock) {
+  const ctx = ctxFor(sock);
+  if (!ctx) return;
+  for (const [gid, g] of Object.entries(ctx.games)) {
+    if (g.status !== 'playing') continue;
+    const id = g.turn === 'w' ? g.white : g.black;
+    if (id.startsWith('ai:')) aiTurn(sock, gid);
+  }
 }
 
 /* ---------- Profil, do'stlar, kubok ---------- */
@@ -155,13 +198,14 @@ function stats(uid) {
   } };
   Object.values(state.groups).forEach(x => scan(x.games));
   Object.values(state.cups).forEach(x => scan(x.games));
-  const u = getU(uid); if (u && u.ai) scan(u.ai.games);
+  const u = getU(uid); if (u && u.ai) scan(u.ai.games); if (u && u.aiCup) scan(u.aiCup.games);
   return { played: w + l + d, wins: w, losses: l, draws: d };
 }
 const profile = (me, o) => ({ ...card(o.id), bio: o.bio || '', stats: stats(o.id), relation: relation(me, o) });
 function sendFriends(uid) {
   const u = getU(uid); if (!u) return; fr(u);
-  const s = JSON.stringify({ t: 'friends', friends: u.friends.map(card).filter(Boolean), incoming: u.reqIn.map(card).filter(Boolean), outgoing: u.reqOut.map(card).filter(Boolean) });
+  const withPresence = id => { const x = card(id); return x ? { ...x, presence: presence(id) } : null; };
+  const s = JSON.stringify({ t: 'friends', friends: u.friends.map(withPresence).filter(Boolean), incoming: u.reqIn.map(withPresence).filter(Boolean), outgoing: u.reqOut.map(withPresence).filter(Boolean) });
   for (const c of wss.clients) if (c.uid === uid && c.readyState === 1) c.send(s);
 }
 const rid = () => Math.random().toString(36).slice(2, 10);
@@ -205,7 +249,7 @@ wss.on('connection', sock => {
   const fail = msg => send({ t: 'error', msg });
   const authOk = (u, token) => {
     if (!token) { token = crypto.randomBytes(24).toString('hex'); state.sessions[token] = u.id; save(); }
-    sock.uid = u.id; send({ t: 'authed', token, name: u.name, id: u.id, username: u.username || u.id }); sendFriends(u.id);
+    sock.uid = u.id; send({ t: 'authed', token, name: u.name, id: u.id, username: u.username || u.id }); broadcastPresence(u.id);
   };
   sock.on('message', raw => {
     let m; try { m = JSON.parse(raw); } catch (e) { return; }
@@ -235,7 +279,87 @@ wss.on('connection', sock => {
     if (!sock.uid) return send({ t: 'noauth' });
     const u = state.users[sock.uid];
 
-    if (m.t === 'leave') { sock.mode = null; sock.g = null; return; }
+    if (m.t === 'leave') { sock.mode = null; sock.g = null; broadcastPresence(u.id); return; }
+    if (m.t === 'challengeFriend') {
+      const oid = String(m.id || '');
+      fr(u);
+      const target = getU(oid);
+      if (!target || !u.friends.includes(oid)) return fail('Faqat do\'stlaringizga taklif yubora olasiz');
+      if (!online(oid)) return fail('Do\'st hozir oflayn');
+      if (isPlaying(oid)) return fail('Do\'st hozir o\'yinda');
+      const invitationId = rid();
+      invitations.set(invitationId, { from: u.id, to: oid });
+      const payload = JSON.stringify({ t: 'challengeInvite', id: invitationId, from: card(u.id) });
+      for (const c of wss.clients) if (c.uid === oid && c.readyState === 1) c.send(payload);
+      return send({ t: 'challengeSent', id: invitationId, name: target.name });
+    }
+    if (m.t === 'answerChallenge') {
+      const invitation = invitations.get(String(m.id || ''));
+      if (!invitation || invitation.to !== u.id) return fail('Taklif topilmadi yoki muddati tugagan');
+      invitations.delete(String(m.id));
+      const inviter = getU(invitation.from);
+      if (m.accept !== true) {
+        for (const c of wss.clients) if (c.uid === invitation.from && c.readyState === 1) c.send(JSON.stringify({ t: 'challengeDeclined', name: u.name }));
+        return;
+      }
+      if (!online(invitation.from)) return fail('Taklif yuborgan do\'st hozir oflayn');
+      const id = uniqueRoomId('league', state.duels);
+      const duel = state.duels[id] = { id, name: `Duel: ${inviter.name} – ${u.name}`, players: { [invitation.from]: { name: inviter.name }, [u.id]: { name: u.name } }, games: {} };
+      const gid = mkGame(duel, invitation.from, u.id);
+      for (const c of wss.clients) if (c.uid === invitation.from || c.uid === u.id) { c.mode = 'duel'; c.g = id; }
+      save(); broadcastPresence(invitation.from); broadcastPresence(u.id);
+      pushAll(c => c.mode === 'duel' && c.g === id);
+      for (const c of wss.clients) if (c.uid === invitation.from && c.readyState === 1) c.send(JSON.stringify({ t: 'opened', gid }));
+      return;
+    }
+    if (m.t === 'startAICup') {
+      const ids = [u.id, ...AIS.map((_, i) => 'ai:' + (i + 1))];
+      const players = { [u.id]: { name: u.name } };
+      AIS.forEach((a, i) => players['ai:' + (i + 1)] = { name: a.name, ai: true, lvl: a.lvl });
+      const cup = { id: `AI-${u.id}`, name: 'AI kubogi', owner: u.id, visibility: 'private', status: 'open', players, games: {}, rounds: [], champion: null };
+      state.users[u.id].aiCup = cup;
+      cupStart(cup);
+      sock.mode = 'aicup'; sock.g = null;
+      save(); pushTo(sock); runAiTurns(sock); broadcastPresence(u.id);
+      return;
+    }
+    if (m.t === 'listRooms') {
+      const kind = m.kind === 'cup' ? 'cup' : 'league';
+      return send({ t: 'rooms', kind, rooms: roomList(kind === 'cup' ? 'cup' : 'league', u.id) });
+    }
+    if (m.t === 'createRoom' || m.t === 'joinRoom') {
+      const kind = m.kind === 'cup' ? 'cup' : 'league';
+      const rooms = kind === 'cup' ? state.cups : state.groups;
+      let id, room;
+      if (m.t === 'createRoom') {
+        const name = String(m.name || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+        const visibility = m.visibility === 'private' ? 'private' : 'public';
+        const password = String(m.password || '');
+        if (name.length < 2) return fail('Liga yoki kubok nomi kamida 2 ta belgi bo\'lsin');
+        if (visibility === 'private' && password.length < 4) return fail('Maxfiy xona paroli kamida 4 ta belgidan iborat bo\'lsin');
+        id = uniqueRoomId(kind, rooms);
+        room = { id, name, owner: u.id, visibility, players: {}, games: {} };
+        if (visibility === 'private') {
+          room.passwordSalt = crypto.randomBytes(16).toString('hex');
+          room.passwordHash = hash(password, room.passwordSalt);
+        }
+        if (kind === 'cup') Object.assign(room, { status: 'open', rounds: [], champion: null });
+        rooms[id] = room;
+      } else {
+        id = String(m.id || '').trim().toUpperCase();
+        room = rooms[id];
+        if (!room) return fail('Bunday ID bilan xona topilmadi');
+        if (room.visibility === 'private' && (!room.passwordSalt || !same(hash(String(m.password || ''), room.passwordSalt), room.passwordHash))) return fail('Maxfiy xona paroli noto\'g\'ri');
+      }
+      if (kind === 'cup' && room.status !== 'open' && !room.players[u.id]) return fail('Bu kubok allaqachon boshlangan');
+      if (!room.players[u.id]) {
+        if (Object.keys(room.players).length >= MAXP) return fail(`${kind === 'cup' ? 'Kubokda' : 'Ligada'} ${MAXP} ta ishtirokchi to'lgan`);
+        room.players[u.id] = { name: u.name, created: Date.now() };
+      }
+      sock.mode = kind === 'cup' ? 'cup' : 'online'; sock.g = id;
+      save(); broadcastPresence(u.id);
+      return pushSame(sock);
+    }
     if (m.t === 'joinLeague') {
       const g = String(m.g || '').trim().toLowerCase().replace(/[\/\s]+/g, '_').slice(0, 30);
       if (!g) return fail('Liga nomini kiriting');
@@ -253,6 +377,7 @@ wss.on('connection', sock => {
       sock.mode = 'ai'; sock.g = null;
       pushTo(sock);
       for (const gid in u.ai.games) aiTurn(sock, gid);
+      broadcastPresence(u.id);
       return;
     }
     if (m.t === 'joinCup') {
@@ -272,7 +397,9 @@ wss.on('connection', sock => {
       const c = sock.mode === 'cup' ? ctxFor(sock) : null;
       if (!c || c.owner !== u.id || c.status !== 'open') return;
       if (Object.keys(c.players).length < 2) return fail('Kamida 2 ta ishtirokchi kerak');
-      cupStart(c); save(); return pushSame(sock);
+      cupStart(c); save(); pushSame(sock);
+      Object.keys(c.players).forEach(broadcastPresence);
+      return;
     }
     if (m.t === 'getProfile') {
       const o = getU(String(m.id || u.id)); if (!o) return fail('Foydalanuvchi topilmadi');
@@ -321,6 +448,7 @@ wss.on('connection', sock => {
       const w = Math.random() < 0.5, gid = Math.random().toString(36).slice(2, 10);
       ctx.games[gid] = { white: w ? sock.uid : oid, black: w ? oid : sock.uid, board: E.initBoard(), turn: 'w', status: 'playing', result: '', msg: '', created: Date.now() };
       save(); send({ t: 'opened', gid }); pushSame(sock);
+      broadcastPresence(sock.uid); broadcastPresence(oid);
       return aiTurn(sock, gid);
     }
     if (m.t === 'move') {
@@ -332,10 +460,15 @@ wss.on('connection', sock => {
       if (!(from >= 0 && from < 100 && to >= 0 && to < 100)) return;
       if (b[from] === '.' || b[from].toLowerCase() !== col || !E.dests(b, col, from).includes(to)) return fail('Bunday yurish mumkin emas');
       Object.assign(g, E.play(g, from, to, u.name));
-      if (sock.mode === 'cup') cupAfter(ctx, m.gid);
+      if (sock.mode === 'cup' || sock.mode === 'aicup') cupAfter(ctx, m.gid);
       save(); pushSame(sock);
+      broadcastPresence(g.white); broadcastPresence(g.black);
+      if (sock.mode === 'aicup') runAiTurns(sock);
       return aiTurn(sock, m.gid);
     }
+  });
+  sock.on('close', () => {
+    if (sock.uid) broadcastPresence(sock.uid);
   });
 });
 
