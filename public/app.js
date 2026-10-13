@@ -41,7 +41,7 @@ function renderLobby(){
   }).join('')||'<div class="mut">Hali hech kim yo\'q</div>';
 }
 function renderGames(){
-  const list=Object.entries(games).filter(([,g])=>!g.sim).sort((a,b)=>b[1].created-a[1].created);
+  const list=Object.entries(games).filter(([,g])=>!g.sim&&!(cupData?.ai&&(g.white===meId||g.black===meId)&&!g.active&&g.status==='playing')).sort((a,b)=>b[1].created-a[1].created);
   $('#glist').innerHTML=list.map(([id,g])=>{
     const mine=g.white===meId||g.black===meId;
     const my=mine&&g.status==='playing'&&((g.turn==='w'&&g.white===meId)||(g.turn==='b'&&g.black===meId));
@@ -74,18 +74,36 @@ const renderAll=()=>{
   else{$('#h2l').textContent='Ishtirokchilar';$('#h2r').textContent='Liga jadvali';$('#rules').hidden=false;renderTable();renderLobby()}
   renderGames();renderBoard();
 };
+function returnToModes(message){
+  lastEnter=null;ls.del('shashka_enter');send({t:'leave'});
+  cur=null;sel=null;curMode=null;cupData=null;
+  $('#mhi').textContent='Salom, '+myName;$('#merr').textContent=message;show('mode');
+  send({t:'listRooms',kind:'league'});send({t:'listRooms',kind:'cup'});
+}
+function checkAICupResult(){
+  if(!cupData||!cupData.ai||!cur)return;
+  const roundIndex=cupData.rounds.findIndex(round=>round.some(match=>match.gid===cur));
+  if(roundIndex<0)return;
+  const round=cupData.rounds[roundIndex],match=round.find(item=>item.gid===cur);
+  if(!match||match.winner===null||!round.every(item=>item.winner!==null))return;
+  if(match.winner===meId)return;
+  const R=cupData.rounds[0].length*2;
+  const results=round.map(item=>`${nm(item.a)} – ${item.b?nm(item.b):'dam olish'}: ${item.winner?nm(item.winner)+' yutdi':'durang'}`).join(' · ');
+  returnToModes(`Siz yutqazdingiz. ${roundName(roundIndex,R)} natijalari: ${results}`);
+}
 function roundName(i,R){const l=R-i;return l===1?'Final':l===2?'Yarim final':l===3?'Chorak final':l===4?'1/8 final':(i+1)+'-tur'}
-function matchHTML(m){
+function matchHTML(m,aiCup=false){
   const row=(id,bye)=>`<div class="mrow${id&&m.winner===id?' win':''}${id&&m.winner&&m.winner!==id?' lose':''}">${id?esc(nm(id)):`<span class="mut">${bye?'dam olish':'—'}</span>`}</div>`;
   const mine=(m.a===meId||m.b===meId)&&!m.winner;
-  return `<div class="match${mine?' mine':''}${m.gid?' clk':''}"${m.gid?` data-open="${m.gid}"`:''}>${row(m.a)}${row(m.b,m.a&&!m.b)}${m.draws?`<div class="dr">${m.draws} marta durang, qayta o'ynaladi</div>`:''}</div>`;
+  const clickable=m.gid&&(!aiCup||m.active);
+  return `<div class="match${mine?' mine':''}${clickable?' clk':''}"${clickable?` data-open="${m.gid}"`:''}>${row(m.a)}${row(m.b,m.a&&!m.b)}${m.draws?`<div class="dr">${m.draws} marta durang, qayta o'ynaladi</div>`:''}</div>`;
 }
 function bracketHTML(c){
   if(!c.rounds.length)return '<div class="mut">Kubok hali boshlanmagan. Tashkilotchi boshlagach, qura bo\'yicha setka tuziladi.</div>';
   const N=c.rounds[0].length*2,R=Math.log2(N);let cols='';
   for(let i=0;i<R;i++){
     const ms=c.rounds[i]||Array.from({length:N/2**(i+1)},()=>({}));
-    cols+=`<div class="bcol"><div class="bh">${roundName(i,R)}</div><div class="bm">${ms.map(matchHTML).join('')}</div></div>`;
+    cols+=`<div class="bcol"><div class="bh">${roundName(i,R)}</div><div class="bm">${ms.map(m=>matchHTML(m,c.ai)).join('')}</div></div>`;
   }
   cols+=`<div class="bcol"><div class="bh">Chempion</div><div class="bm"><div class="champ">🏆<div>${c.champion?esc(nm(c.champion)):'—'}</div></div></div></div>`;
   return `<div class="bracket">${cols}</div>`;
@@ -98,6 +116,23 @@ function renderCup(){
     h+=`<div class="mut" style="margin:10px 0">${ids.length}/16 ishtirokchi</div>`;
     h+=c.owner===meId?`<button id="cupstart" style="width:100%" ${ids.length<2?'disabled':''}>Kubokni boshlash</button>`:'<div class="mut">Tashkilotchi boshlashini kuting</div>';
   }else if(c.status==='done')h+=`<div class="st">Chempion: ${esc(nm(c.champion))}</div>`;
+  if(c.ai&&cur){
+    const roundIndex=c.rounds.findIndex(round=>round.some(match=>match.gid===cur));
+    const round=c.rounds[roundIndex],match=round&&round.find(item=>item.gid===cur),game=games[cur];
+    if(match&&game&&game.status==='done'){
+      const complete=round.every(item=>item.winner!==null);
+      const R=c.rounds[0].length*2;
+      const results=round.map(item=>`${esc(nm(item.a))} – ${item.b?esc(nm(item.b)):'dam olish'}: ${item.winner?esc(nm(item.winner))+' yutdi':"o'yin davom etmoqda"}`).join('<br>');
+      h+=`<div class="round-result"><h3>${roundName(roundIndex,R)} natijalari</h3><div>${results}</div>`;
+      if(complete)h+=`<p class="st">${match.winner===meId?"Siz bu bosqichda g'alaba qozondingiz!":'Siz yutqazdingiz.'}</p>`;
+      else h+=`<p class="mut">Qolgan o'yinlar natijalari hisoblanmoqda...</p>`;
+      if(complete&&match.winner!==meId)h+=`<div class="mut">AI kubogi yakunlandi.</div>`;
+      else if(complete&&c.status==='done')h+=`<div class="st">Kubok chempioni: ${esc(nm(c.champion))}</div>`;
+      h+='</div>';
+      if(complete&&match.winner===meId&&c.status!=='done')h+=`<button id="aicupnext" style="width:100%;margin-top:10px">Keyingisi</button>`;
+      else if(complete)h+=`<button id="aicupmenu" class="ghost" style="width:100%;margin-top:10px">Asosiy menyuga qaytish</button>`;
+    }
+  }
   $('#lobby').innerHTML=h;$('#tbl').innerHTML=bracketHTML(c);
 }
 function renderRooms(kind){
@@ -168,9 +203,22 @@ function onMsg(ev){
     $('#hn').textContent='Siz: '+myName;
     document.querySelector('main').className=m.mode==='cup'||m.mode==='aicup'?'cup':'';
     const mp=Object.entries(games).find(([,x])=>x.status==='playing'&&(x.white===meId||x.black===meId)),g0=games[cur];
-    if(!g0||(g0.status==='done'&&mp&&(g0.white===meId||g0.black===meId)))cur=mp?mp[0]:(g0?cur:null);
+    if(m.mode==='aicup'){
+      if(!cur)cur=Object.entries(games).find(([,g])=>g.active&&g.status==='playing'&&(g.white===meId||g.black===meId))?.[0]||null;
+      else if(g0?.status==='done'&&mp&&mp[0]!==cur&&games[mp[0]].active)cur=mp[0];
+      const activeRound=[...(cupData?.rounds||[])].reverse().find(round=>round.some(match=>(match.a===meId||match.b===meId)&&match.winner===null));
+      const activeMatch=activeRound&&activeRound.find(match=>(match.a===meId||match.b===meId)&&match.winner===null);
+      if(g0&&g0.status==='done'&&g0.result==='d'&&activeMatch?.draws&&activeMatch.gid!==cur&&games[activeMatch.gid]?.status==='playing')cur=activeMatch.gid;
+    }else if(!g0||(g0.status==='done'&&mp&&(g0.white===meId||g0.black===meId)))cur=mp?mp[0]:(g0?cur:null);
     renderAll();
+    if(m.mode==='aicup')checkAICupResult();
   }else if(m.t==='opened'){cur=m.gid;sel=null;renderAll()}
+  else if(m.t==='opponentLeft'){
+    cur=m.gid;sel=null;
+    $('#gameNoticeText').textContent=`${m.name} o'yindan chiqib ketdi. Sizga g'alaba yozildi!`;
+    $('#gameNotice').hidden=false;
+    renderAll();
+  }
   else if(m.t==='rooms'){roomLists[m.kind]=m.rooms;renderRooms(m.kind)}
   else if(m.t==='challengeInvite'){
     inviteId=m.id;$('#inviteText').textContent=`${m.from.name} sizni 1 ga 1 shashka o'yiniga taklif qildi.`;$('#inviteNotice').hidden=false;
@@ -304,7 +352,11 @@ $('#avf').onchange=e=>{
   };im.src=r.result};
   r.readAsDataURL(f);e.target.value='';
 };
-document.addEventListener('click',e=>{if(e.target.closest('#cupstart'))send({t:'cupStart'})});
+document.addEventListener('click',e=>{
+  if(e.target.closest('#cupstart'))send({t:'cupStart'});
+  if(e.target.closest('#aicupnext'))send({t:'nextAICupGame'});
+  if(e.target.closest('#aicupmenu'))returnToModes(cupData?.champion===meId?"Tabriklaymiz! Siz AI kubogi chempioni bo'ldingiz.":'AI kubogi yakunlandi.');
+});
 $('#inviteAccept').onclick=()=>{
   if(inviteId)send({t:'answerChallenge',id:inviteId,accept:true});
   inviteId=null;$('#inviteNotice').hidden=true;
@@ -313,6 +365,7 @@ $('#inviteDecline').onclick=()=>{
   if(inviteId)send({t:'answerChallenge',id:inviteId,accept:false});
   inviteId=null;$('#inviteNotice').hidden=true;
 };
+$('#closeGameNotice').onclick=()=>$('#gameNotice').hidden=true;
 setInterval(()=>send({t:'ping'}),25000);
 setInterval(()=>{if(authed&&!$('#mode').hidden){send({t:'listRooms',kind:'league'});send({t:'listRooms',kind:'cup'})}},15000);
 (async()=>{

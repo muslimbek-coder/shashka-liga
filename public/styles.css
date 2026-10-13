@@ -114,6 +114,8 @@ main.cup #side{order:3}
 .match{background:#10265c;border:1px solid #2a5bd7;border-radius:8px;overflow:hidden}
 .match.clk{cursor:pointer}.match.clk:hover{border-color:#8fb2ff}
 .match.mine{box-shadow:0 0 0 2px var(--acc2)}
+.round-result{margin-top:14px;padding:12px;border:1px solid var(--acc);border-radius:10px;background:#1a110a;font-size:13px;line-height:1.7}.round-result h3{margin:0 0 6px;color:var(--acc2)}.round-result p{margin:8px 0}
+#gameNotice{position:fixed;z-index:40;top:18px;left:50%;transform:translateX(-50%);width:min(560px,calc(100vw - 28px));display:flex;justify-content:space-between;align-items:center;gap:14px;padding:12px 16px;border:1px solid var(--acc);border-radius:10px;background:var(--panel);box-shadow:0 10px 30px rgba(0,0,0,.6);color:var(--acc2);font-weight:700}#gameNotice[hidden]{display:none!important}#gameNotice button{padding:4px 9px}
 .mrow{padding:6px 10px;font-size:13px;border-bottom:1px solid rgba(255,255,255,.12);min-height:30px}
 .mrow:last-child{border-bottom:0}
 .mrow.win{background:#1f5fd6;font-weight:700}.mrow.lose{opacity:.45}
