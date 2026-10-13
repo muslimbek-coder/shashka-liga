@@ -111,7 +111,7 @@ function newAILeague(u) {
 const server = http.createServer((req, res) => {
   const requested = req.url.split('?')[0];
   const allowed = new Set([
-    '/', '/index.html', '/engine.js', '/styles.css', '/app.js', '/pages.js',
+    '/', '/index.html', '/engine.js', '/styles.css', '/app.js', '/pages.js', '/images/shashka-logo.png',
     '/pages/login.html', '/pages/modes.html', '/pages/game.html',
     '/pages/profile.html', '/pages/invitation.html'
   ]);
@@ -119,7 +119,7 @@ const server = http.createServer((req, res) => {
   const f = requested === '/' ? 'index.html' : requested.slice(1);
   fs.readFile(path.join(__dirname, 'public', f), (e, d) => {
     if (e) { res.writeHead(404); return res.end(); }
-    const type = f.endsWith('.js') ? 'text/javascript; charset=utf-8' : f.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/html; charset=utf-8';
+    const type = f.endsWith('.js') ? 'text/javascript; charset=utf-8' : f.endsWith('.css') ? 'text/css; charset=utf-8' : f.endsWith('.png') ? 'image/png' : 'text/html; charset=utf-8';
     res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache' });
     res.end(d);
   });
