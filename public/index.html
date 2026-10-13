@@ -48,22 +48,54 @@ tr.top td:first-child{border-radius:6px 0 0 6px}tr.top td:last-child{border-radi
 tr.me td:nth-child(2){text-decoration:underline}
 details{margin-top:12px;color:var(--mut);font-size:13px}
 @media(max-width:1100px){main{grid-template-columns:1fr}#boardwrap{order:-1}}
+[hidden]{display:none!important}
+.tabs{display:flex;gap:8px;margin-bottom:6px}.tabs .on{background:var(--acc);color:#1c1c1c;border-color:var(--acc)}
+#mode{max-width:760px;margin:9vh auto;padding:28px;background:var(--panel);border-radius:10px}
+#mode h1{margin:0 0 4px}
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}
+.mcard{background:#1f292e;padding:16px;border-radius:8px;display:flex;flex-direction:column;gap:10px}
+.mcard h2{margin:0}.mcard p{margin:0}.mcard button{margin-top:auto}
+#merr{color:#ff8f7a;min-height:20px;margin-bottom:10px;font-size:14px}
+@media(max-width:640px){.modes{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div id="login">
   <h1>Shashka Liga</h1>
-  <p>Guruh nomi va ismingizni kiriting. Bir xil guruhdagilar bir ligada o'ynaydi.</p>
-  <label for="grp">Guruh nomi</label><input id="grp" maxlength="30" autocomplete="off">
-  <label for="nm">Ismingiz</label><input id="nm" maxlength="20" autocomplete="off">
+  <p>Hisobingizga kiring yoki yangi hisob oching.</p>
+  <div class="tabs"><button class="ghost on" id="tabin">Kirish</button><button class="ghost" id="tabup">Ro'yxatdan o'tish</button></div>
+  <label for="fn">Ism</label><input id="fn" maxlength="20" autocomplete="given-name">
+  <label for="ln">Familya</label><input id="ln" maxlength="20" autocomplete="family-name">
+  <label for="pw">Parol</label><input id="pw" type="password" autocomplete="current-password">
+  <div id="pw2w" hidden><label for="pw2">Parolni takrorlang</label><input id="pw2" type="password" autocomplete="new-password"></div>
   <button id="go" style="margin-top:16px;width:100%">Kirish</button>
   <div id="err"></div>
+</div>
+
+<div id="mode" hidden>
+  <h1 id="mhi"></h1>
+  <div class="mut">O'yin rejimini tanlang</div>
+  <div class="modes">
+    <div class="mcard">
+      <h2>Onlayn liga</h2>
+      <p class="mut">Boshqa odamlar bilan. Liga nomini yozing: bunday liga bo'lsa qo'shilasiz, bo'lmasa yangisi ochiladi (16 tagacha ishtirokchi).</p>
+      <input id="lg" maxlength="30" placeholder="Liga nomi">
+      <button id="joinl">Qo'shilish</button>
+    </div>
+    <div class="mcard">
+      <h2>AI bilan liga</h2>
+      <p class="mut">15 ta kompyuter raqib (boshlovchidan kuchligacha). Ulardan 8 tasi bilan o'ynaysiz, qolgan o'yinlar avtomatik hisoblanadi. Natijalaringiz saqlanadi.</p>
+      <button id="ai">Boshlash</button>
+    </div>
+  </div>
+  <div id="merr"></div>
+  <button class="ghost" id="out2">Chiqish</button>
 </div>
 
 <div id="app" hidden>
   <header>
     <div><b id="hg"></b> <span class="mut" id="hn"></span></div>
-    <button class="ghost" id="out">Chiqish</button>
+    <span><button class="ghost" id="back">Rejimni almashtirish</button> <button class="ghost" id="out">Chiqish</button></span>
   </header>
   <main>
     <div>
@@ -97,7 +129,8 @@ const MAXG=8;
 const {dests}=Engine;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let meId,players={},games={},cur=null,sel=null,sock=null,joined=false,creds=null;
+const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
+let meId,myName,players={},games={},cur=null,sel=null,sock=null,token=null,authed=false,lastEnter=null,regMode=false,curMode=null;
 
 /* ---------- Jadval ---------- */
 function table(){
@@ -135,7 +168,7 @@ function renderLobby(){
   }).join('')||'<div class="mut">Hali hech kim yo\'q</div>';
 }
 function renderGames(){
-  const list=Object.entries(games).sort((a,b)=>b[1].created-a[1].created);
+  const list=Object.entries(games).filter(([,g])=>!g.sim).sort((a,b)=>b[1].created-a[1].created);
   $('#glist').innerHTML=list.map(([id,g])=>{
     const mine=g.white===meId||g.black===meId;
     const my=mine&&g.status==='playing'&&((g.turn==='w'&&g.white===meId)||(g.turn==='b'&&g.black===meId));
@@ -167,6 +200,7 @@ const renderAll=()=>{renderTable();renderLobby();renderGames();renderBoard()};
 /* ---------- Harakatlar ---------- */
 const send=o=>{if(sock&&sock.readyState===1)sock.send(JSON.stringify(o))};
 const toast=t=>{$('#msg').textContent=t};
+const show=id=>{['login','mode','app'].forEach(x=>$('#'+x).hidden=x!==id)};
 $('#board').onclick=e=>{
   const s=e.target.closest('.sq');if(!s)return;
   const g=games[cur];if(!g||g.status!=='playing')return;
@@ -185,42 +219,67 @@ document.addEventListener('click',e=>{
   if(c)send({t:'challenge',oid:c.dataset.ch});
 });
 
-/* ---------- Ulanish ---------- */
-function connect(){
+/* ---------- Ulanish va kirish ---------- */
+function wsOpen(){
   return new Promise((res,rej)=>{
+    if(sock&&sock.readyState===1)return res();
     const s=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
     sock=s;
-    s.onopen=()=>s.send(JSON.stringify({t:'join',g:creds.g,n:creds.n}));
-    s.onmessage=ev=>{
-      const m=JSON.parse(ev.data);
-      if(m.t==='joined'){joined=true;meId=creds.n.toLowerCase();res()}
-      else if(m.t==='state'){
-        players=m.players;games=m.games;
-        if(!cur||!games[cur]){const f=Object.entries(games).find(([,x])=>x.status==='playing'&&(x.white===meId||x.black===meId));cur=f?f[0]:null}
-        renderAll();
-      }
-      else if(m.t==='opened'){cur=m.gid;sel=null;renderAll()}
-      else if(m.t==='error'){if(!joined)rej(new Error(m.msg));else toast(m.msg)}
-    };
-    s.onerror=()=>{if(!joined)rej(new Error("Serverga ulanib bo'lmadi"))};
-    s.onclose=()=>{if(joined){toast("Aloqa uzildi, qayta ulanmoqda...");setTimeout(()=>connect().catch(()=>{}),2000)}};
+    s.onopen=()=>res();
+    s.onerror=()=>rej(new Error("Serverga ulanib bo'lmadi"));
+    s.onmessage=onMsg;
+    s.onclose=()=>{if(authed){toast('Aloqa uzildi, qayta ulanmoqda...');setTimeout(async()=>{try{await wsOpen();send({t:'resume',token})}catch(e){}},2000)}};
   });
 }
+function showErr(t){
+  if(!$('#app').hidden)toast(t);
+  else if(!$('#mode').hidden){$('#merr').textContent=t;lastEnter=null;ls.del('shashka_enter')}
+  else $('#err').textContent=t;
+}
+function onMsg(ev){
+  const m=JSON.parse(ev.data);
+  if(m.t==='authed'){
+    token=m.token;authed=true;meId=m.id;myName=m.name;ls.set('shashka_token',token);
+    if(lastEnter)send(lastEnter);else{$('#mhi').textContent='Salom, '+m.name;show('mode')}
+  }else if(m.t==='noauth'){
+    token=null;authed=false;ls.del('shashka_token');show('login');
+  }else if(m.t==='state'){
+    players=m.players;games=m.games;
+    if(curMode!==m.mode+(m.league||'')){curMode=m.mode+(m.league||'');cur=null;sel=null}
+    if($('#app').hidden){show('app');$('#hg').textContent=m.mode==='ai'?'AI bilan liga':'Liga: '+m.league;$('#hn').textContent='Siz: '+myName}
+    if(!cur||!games[cur]){const f=Object.entries(games).find(([,x])=>x.status==='playing'&&(x.white===meId||x.black===meId));cur=f?f[0]:null}
+    renderAll();
+  }else if(m.t==='opened'){cur=m.gid;sel=null;renderAll()}
+  else if(m.t==='error')showErr(m.msg);
+}
 const err=t=>$('#err').textContent=t;
+function setTab(reg){
+  regMode=reg;$('#pw2w').hidden=!reg;$('#go').textContent=reg?"Ro'yxatdan o'tish":'Kirish';
+  $('#tabin').classList.toggle('on',!reg);$('#tabup').classList.toggle('on',reg);
+  $('#pw').autocomplete=reg?'new-password':'current-password';err('');
+}
+$('#tabin').onclick=()=>setTab(false);
+$('#tabup').onclick=()=>setTab(true);
 $('#go').onclick=async()=>{
-  const g=$('#grp').value.trim().toLowerCase().replace(/[\/\s]+/g,'_'),n=$('#nm').value.trim().slice(0,20);
-  if(!g||!n)return err('Guruh nomi va ismni kiriting');
-  err('');creds={g,n};
-  try{
-    await connect();
-    try{localStorage.setItem('shashka',JSON.stringify({g,n}))}catch(e){}
-    $('#login').hidden=true;$('#app').hidden=false;
-    $('#hg').textContent='Guruh: '+g;$('#hn').textContent='Siz: '+n;
-    setInterval(()=>send({t:'ping'}),25000);
-  }catch(e){err(e.message)}
+  const first=$('#fn').value.trim(),last=$('#ln').value.trim(),pass=$('#pw').value;
+  if(!first||!last||!pass)return err('Ism, familya va parolni kiriting');
+  if(regMode&&pass!==$('#pw2').value)return err('Parollar bir xil emas');
+  err('');
+  try{await wsOpen()}catch(e){return err(e.message)}
+  send({t:regMode?'register':'login',first,last,pass});
 };
-$('#out').onclick=()=>{joined=false;try{localStorage.removeItem('shashka')}catch(e){}location.reload()};
-try{const s=JSON.parse(localStorage.getItem('shashka'));if(s){$('#grp').value=s.g;$('#nm').value=s.n}}catch(e){}
+function enter(m){lastEnter=m;ls.set('shashka_enter',JSON.stringify(m));$('#merr').textContent='';cur=null;sel=null;send(m)}
+$('#joinl').onclick=()=>{const g=$('#lg').value.trim();if(!g)return $('#merr').textContent='Liga nomini kiriting';enter({t:'joinLeague',g})};
+$('#ai').onclick=()=>enter({t:'startAI'});
+$('#back').onclick=()=>{lastEnter=null;ls.del('shashka_enter');send({t:'leave'});cur=null;sel=null;curMode=null;$('#mhi').textContent='Salom, '+myName;show('mode')};
+const logout=()=>{authed=false;ls.del('shashka_token');ls.del('shashka_enter');location.reload()};
+$('#out').onclick=logout;$('#out2').onclick=logout;
+setInterval(()=>send({t:'ping'}),25000);
+(async()=>{
+  token=ls.get('shashka_token');
+  try{lastEnter=JSON.parse(ls.get('shashka_enter'))}catch(e){}
+  if(token){try{await wsOpen();send({t:'resume',token})}catch(e){}}
+})();
 </script>
 </body>
 </html>
