@@ -75,6 +75,7 @@ const renderAll=()=>{
   renderGames();renderBoard();
 };
 function returnToModes(message){
+  closeModeDialog();
   lastEnter=null;ls.del('shashka_enter');send({t:'leave'});
   cur=null;sel=null;curMode=null;cupData=null;
   $('#mhi').textContent='Salom, '+myName;$('#merr').textContent=message;show('mode');
@@ -187,6 +188,40 @@ function renderRooms(kind){
 const send=o=>{if(sock&&sock.readyState===1)sock.send(JSON.stringify(o))};
 const toast=t=>{$('#msg').textContent=t};
 const show=id=>{['login','mode','app'].forEach(x=>$('#'+x).hidden=x!==id)};
+let modeOptions=null,modeCard=null,modeTrigger=null;
+function openModeDialog(trigger){
+  const card=trigger.closest('.mcard'),options=card?.querySelector('.mode-options');
+  if(!card||!options)return;
+  modeOptions=options;modeCard=card;modeTrigger=trigger;
+  $('#modeDialogTitle').textContent=card.querySelector('h2').textContent;
+  $('#modeDialogDescription').textContent=card.querySelector('.mut').textContent;
+  options.hidden=false;
+  $('#modeDialogContent').append(options,$('#merr'));
+  $('#modeDialog').hidden=false;
+  document.body.classList.add('mode-dialog-open');
+  $('#modeDialogClose').focus();
+}
+function closeModeDialog(){
+  if($('#modeDialog').hidden)return;
+  if(modeOptions){
+    modeOptions.hidden=true;
+    modeCard.append(modeOptions);
+    modeOptions=null;
+    modeCard=null;
+  }
+  $('#mode').insertBefore($('#merr'),$('#mode .hbtns'));
+  $('#modeDialog').hidden=true;
+  document.body.classList.remove('mode-dialog-open');
+  if(modeTrigger?.isConnected)modeTrigger.focus();
+  modeTrigger=null;
+}
+$('#mode').addEventListener('click',e=>{
+  const trigger=e.target.closest('[data-mode-open]');
+  if(trigger)openModeDialog(trigger);
+});
+$('#modeDialogClose').onclick=closeModeDialog;
+$('#modeDialog').addEventListener('click',e=>{if(e.target.id==='modeDialog')closeModeDialog()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#modeDialog').hidden)closeModeDialog()});
 $('#board').onclick=e=>{
   const s=e.target.closest('.sq');if(!s)return;
   const g=games[cur];if(!g||g.status!=='playing')return;
@@ -238,6 +273,7 @@ function onMsg(ev){
     players=m.players;games=m.games;cupData=m.cup||null;
     const key=m.mode+(m.league||'');
     if(curMode!==key){curMode=key;cur=null;sel=null}
+    closeModeDialog();
     if($('#app').hidden)show('app');
     $('#hg').textContent=m.mode==='ai'?'AI bilan liga':m.mode==='aicup'?'AI kubogi':m.mode==='duel'?"Do'st bilan duel":(m.mode==='cup'?'Kubok: ':'Liga: ')+(m.league||'');
     if(m.mode!=='ai'&&m.mode!=='aicup')$('#hg').textContent+=' · ID '+(m.roomId||'');
@@ -296,8 +332,8 @@ $('#go').onclick=async()=>{
   try{await wsOpen()}catch(e){return err(e.message)}
   send(regMode?{t:'register',first,last,username,pass}:{t:'login',username,pass});
 };
-function enter(m){lastEnter=m;ls.set('shashka_enter',JSON.stringify(m));$('#merr').textContent='';cur=null;sel=null;send(m)}
-function enterRoom(m){lastEnter=null;ls.del('shashka_enter');$('#merr').textContent='';cur=null;sel=null;send(m)}
+function enter(m){closeModeDialog();lastEnter=m;ls.set('shashka_enter',JSON.stringify(m));$('#merr').textContent='';cur=null;sel=null;send(m)}
+function enterRoom(m){closeModeDialog();lastEnter=null;ls.del('shashka_enter');$('#merr').textContent='';cur=null;sel=null;send(m)}
 function createRoom(kind){
   const cup=kind==='cup',name=$('#'+(cup?'newcup':'newlg')).value.trim(),visibility=$('#'+kind+'visibility').value,password=$('#'+kind+'createpass').value;
   if(!name)return $('#merr').textContent=cup?'Kubok nomini kiriting':'Liga nomini kiriting';
@@ -317,7 +353,7 @@ $('#leaguevisibility').onchange=()=>$('#leaguecreatepass').hidden=$('#leaguevisi
 $('#cupvisibility').onchange=()=>$('#cupcreatepass').hidden=$('#cupvisibility').value!=='private';
 $('#ai').onclick=()=>enter({t:'startAI'});
 $('#aicup').onclick=()=>enter({t:'startAICup'});
-$('#back').onclick=()=>{lastEnter=null;ls.del('shashka_enter');send({t:'leave'});cur=null;sel=null;curMode=null;$('#mhi').textContent='Salom, '+myName;show('mode');send({t:'listRooms',kind:'league'});send({t:'listRooms',kind:'cup'})};
+$('#back').onclick=()=>{closeModeDialog();lastEnter=null;ls.del('shashka_enter');send({t:'leave'});cur=null;sel=null;curMode=null;$('#mhi').textContent='Salom, '+myName;show('mode');send({t:'listRooms',kind:'league'});send({t:'listRooms',kind:'cup'})};
 const logout=()=>{authed=false;ls.del('shashka_token');ls.del('shashka_enter');location.reload()};
 $('#out').onclick=logout;$('#out2').onclick=logout;
 /* ---------- Profil va do'stlar ---------- */
