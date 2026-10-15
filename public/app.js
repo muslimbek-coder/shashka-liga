@@ -100,6 +100,14 @@ function matchHTML(m,aiCup=false){
 }
 function bracketHTML(c){
   if(!c.rounds.length)return '<div class="mut">Kubok hali boshlanmagan. Tashkilotchi boshlagach, qura bo\'yicha setka tuziladi.</div>';
+  if(c.playoffSize===12){
+    const names=['12 talik bosqich','Chorak final','Yarim final','Final'];
+    const cols=names.map((name,i)=>{
+      const matches=c.rounds[i]||[];
+      return `<div class="bcol"><div class="bh">${name}</div><div class="bm">${matches.map(m=>matchHTML(m,c.ai)).join('')}</div></div>`;
+    }).join('');
+    return `<div class="bracket">${cols}<div class="bcol"><div class="bh">Chempion</div><div class="bm"><div class="champ">🏆<div>${c.champion?esc(nm(c.champion)):'—'}</div></div></div></div></div>`;
+  }
   const N=c.rounds[0].length*2,R=Math.log2(N);let cols='';
   for(let i=0;i<R;i++){
     const ms=c.rounds[i]||Array.from({length:N/2**(i+1)},()=>({}));
@@ -108,13 +116,42 @@ function bracketHTML(c){
   cols+=`<div class="bcol"><div class="bh">Chempion</div><div class="bm"><div class="champ">🏆<div>${c.champion?esc(nm(c.champion)):'—'}</div></div></div></div>`;
   return `<div class="bracket">${cols}</div>`;
 }
+function cupStandingsHTML(c){
+  if(!c.groupStage?.groups)return '';
+  const qualified=new Set(c.groupStage.qualifiers||[]);
+  return c.groupStage.groups.map(group=>{
+    const rows=group.players.map(id=>({id,name:nm(id),points:0,wins:0,losses:0,draws:0,diff:0,played:0}));
+    const byId=Object.fromEntries(rows.map(row=>[row.id,row]));
+    for(const gid of group.games){
+      const game=games[gid];if(!game||game.status!=='done')continue;
+      const white=byId[game.white],black=byId[game.black];if(!white||!black)continue;
+      white.played++;black.played++;
+      if(game.result==='d'){white.draws++;black.draws++}
+      else{
+        const winner=game.result==='w'?white:black,loser=game.result==='w'?black:white;
+        winner.points+=3;winner.wins++;loser.points-=2;loser.losses++;
+        winner.diff+=game.result==='w'?game.wl:game.bl;
+        loser.diff-=game.result==='w'?game.bl:game.wl;
+      }
+    }
+    rows.sort((a,b)=>b.points-a.points||b.wins-a.wins||b.diff-a.diff||a.name.localeCompare(b.name));
+    return `<h3>${esc(group.name)} guruhi</h3><table><tr><th>#</th><th>Ishtirokchi</th><th>O'yin</th><th>G'-M-D</th><th>Farq</th><th>Ochko</th></tr>`+
+      rows.map((row,index)=>`<tr class="${qualified.has(row.id)?'qualifier':''}"><td>${index+1}</td><td>${esc(row.name)}${qualified.has(row.id)?' <span class="tag">pley-off</span>':''}</td><td>${row.played}/3</td><td>${row.wins}-${row.losses}-${row.draws}</td><td>${row.diff>0?'+':''}${row.diff}</td><td><b>${row.points}</b></td></tr>`).join('')+'</table>';
+  }).join('');
+}
 function renderCup(){
   const c=cupData,ids=Object.keys(players);
-  $('#h2l').textContent='Ishtirokchilar';$('#h2r').textContent=c.ai?'AI kubogi setkasi':'Kubok setkasi';$('#rules').hidden=true;
+  $('#h2l').textContent='Ishtirokchilar';$('#h2r').textContent=c.ai?'AI kubogi setkasi':c.phase==='groups'?'Guruh jadvali':c.phase==='playoff'?'Kubok setkasi':'Guruh bosqichi';$('#rules').hidden=true;
   let h=ids.map(id=>`<div class="row"><span>${esc(nm(id))}${id===meId?' <span class="tag">siz</span>':''}${id===c.owner?' <span class="mut">(tashkilotchi)</span>':''}</span></div>`).join('');
   if(c.status==='open'){
     h+=`<div class="mut" style="margin:10px 0">${ids.length}/16 ishtirokchi</div>`;
-    h+=c.owner===meId?`<button id="cupstart" style="width:100%" ${ids.length<2?'disabled':''}>Kubokni boshlash</button>`:'<div class="mut">Tashkilotchi boshlashini kuting</div>';
+    const canStart=ids.length===12||ids.length===16;
+    h+=c.owner===meId?`<button id="cupstart" style="width:100%" ${canStart?'':'disabled'}>Guruh bosqichini boshlash</button>`:"<div class=\"mut\">Tashkilotchi 12 yoki 16 ishtirokchi to'lgach boshlaydi</div>";
+    if(c.owner===meId&&!canStart)h+='<div class="mut">Boshlash uchun 12 yoki 16 ishtirokchi kerak</div>';
+  }else if(c.phase==='groups'){
+    h+=`<div class="mut" style="margin:10px 0">Guruh bosqichi: har biri 3 ta o'yin. G'alaba +3, mag'lubiyat -2, durang 0 ochko.</div>`;
+  }else if(c.status==='running'&&c.phase==='playoff'){
+    h+=`<div class="mut" style="margin:10px 0">Eng yaxshi 12 o'yinchi pley-offda. Dastlabki 4 o'rin chorak finaldan boshlaydi.</div>`;
   }else if(c.status==='done')h+=`<div class="st">Chempion: ${esc(nm(c.champion))}</div>`;
   if(c.ai&&cur){
     const roundIndex=c.rounds.findIndex(round=>round.some(match=>match.gid===cur));
@@ -133,7 +170,9 @@ function renderCup(){
       else if(complete)h+=`<button id="aicupmenu" class="ghost" style="width:100%;margin-top:10px">Asosiy menyuga qaytish</button>`;
     }
   }
-  $('#lobby').innerHTML=h;$('#tbl').innerHTML=bracketHTML(c);
+  $('#lobby').innerHTML=h;
+  const standings=cupStandingsHTML(c);
+  $('#tbl').innerHTML=c.phase==='groups'?standings:(standings?`<h3>Guruh natijalari</h3>${standings}`:'')+bracketHTML(c);
 }
 function renderRooms(kind){
   const list=roomLists[kind]||[],id=kind==='cup'?'cuplist':'leaguelist';
@@ -193,6 +232,8 @@ function onMsg(ev){
     if(lastEnter)send(lastEnter);else{$('#mhi').textContent='Salom, '+m.name;show('mode');send({t:'listRooms',kind:'league'});send({t:'listRooms',kind:'cup'})}
   }else if(m.t==='noauth'){
     token=null;authed=false;ls.del('shashka_token');show('login');
+  }else if(m.t==='dataCleared'){
+    token=null;authed=false;lastEnter=null;ls.del('shashka_token');ls.del('shashka_enter');show('login');err('Sayt ma’lumotlari administrator tomonidan tozalandi.');
   }else if(m.t==='state'){
     players=m.players;games=m.games;cupData=m.cup||null;
     const key=m.mode+(m.league||'');

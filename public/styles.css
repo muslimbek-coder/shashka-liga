@@ -75,6 +75,7 @@ th:nth-child(2),td:nth-child(2){text-align:left}
 tr.top td{background:linear-gradient(90deg,#1f5fd6,#2a74f0);color:#fff;font-weight:700}
 tr.top td:first-child{border-radius:8px 0 0 8px;text-align:center}tr.top td:last-child{border-radius:0 8px 8px 0}
 tr.me td:nth-child(2){text-decoration:underline}
+tr.qualifier td:first-child{border-left:3px solid var(--acc2)}
 details{margin-top:12px;color:var(--mut);font-size:13px}
 summary{cursor:pointer;color:var(--acc2)}
 @media(max-width:1100px){main{grid-template-columns:1fr}#boardwrap{order:-1}}
@@ -124,3 +125,13 @@ main.cup #side{order:3}
 .champ{text-align:center;font-size:38px;border:1px dashed #2a5bd7;border-radius:12px;padding:16px 8px}
 .champ div{font-size:14px;font-weight:700;margin-top:4px}
 #inviteNotice{position:fixed;z-index:60;right:18px;top:18px;width:min(360px,calc(100vw - 36px));padding:16px;background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--acc);border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.6)}#inviteNotice .hbtns{margin-top:12px}.presence{font-size:12px}.presence.online{color:#7bd88f}.presence.offline{color:var(--mut)}.presence.playing{color:var(--acc2)}
+.admin-main{display:block;max-width:640px;margin:8vh auto;padding:12px}
+.admin-panel{padding:24px}
+.admin-panel h1{font-size:25px;margin-top:0}
+.admin-panel form{display:grid;gap:10px}
+.admin-panel #adminActions{margin:22px 0;padding-top:16px;border-top:1px solid var(--line)}
+.admin-panel a{display:inline-block;margin-top:18px;color:var(--acc2)}
+.admin-panel .danger{background:linear-gradient(#df7968,#b94133);color:#fff}
+#adminMessage{min-height:22px;margin-top:12px}
+#adminMessage.error{color:#ff9a84}
+#adminMessage.success{color:#7bd88f}

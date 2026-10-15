@@ -5,8 +5,9 @@ const E = require('./public/engine.js');
 const PORT = process.env.PORT || 3000;
 const FILE = path.join(process.env.DATA_DIR || __dirname, 'data.json');
 const MAXP = 16, MAXG = 8;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 process.on('uncaughtException', e => console.error(e));
-let state = { users: {}, sessions: {}, groups: {}, cups: {}, duels: {} }, pg = null, timer = null;
+let state = { users: {}, sessions: {}, groups: {}, cups: {}, duels: {} }, pg = null, timer = null, saveQueue = Promise.resolve();
 const invitations = new Map();
 
 /* ---------- Saqlash ---------- */
@@ -18,24 +19,47 @@ async function load() {
     const r = await pg.query("select v from kv where k='state'");
     if (r.rows[0]) state = r.rows[0].v;
   } else {
-    try { state = JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch (e) {}
+    try {
+      state = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+    } catch (e) {
+      if (e.code !== 'ENOENT') throw e;
+    }
   }
   state.users = state.users || {}; state.sessions = state.sessions || {}; state.groups = state.groups || {}; state.cups = state.cups || {}; state.duels = state.duels || {};
 }
+function persist() {
+  const snapshot = JSON.stringify(state);
+  const operation = saveQueue.catch(() => {}).then(async () => {
+    if (pg) await pg.query("insert into kv(k,v) values('state',$1) on conflict(k) do update set v=$1", [snapshot]);
+    else {
+      const temporary = `${FILE}.${process.pid}.tmp`;
+      try {
+        fs.writeFileSync(temporary, snapshot);
+        fs.renameSync(temporary, FILE);
+      } catch (e) {
+        try { fs.unlinkSync(temporary); } catch (cleanupError) { if (cleanupError.code !== 'ENOENT') console.error('temporary data cleanup error', cleanupError.message); }
+        throw e;
+      }
+    }
+  });
+  saveQueue = operation;
+  return operation.catch(e => { console.error('save error', e.message); throw e; });
+}
 function save() {
   if (timer) return;
-  timer = setTimeout(async () => {
-    timer = null;
-    try {
-      if (pg) await pg.query("insert into kv(k,v) values('state',$1) on conflict(k) do update set v=$1", [JSON.stringify(state)]);
-      else fs.writeFileSync(FILE, JSON.stringify(state));
-    } catch (e) { console.error('save error', e.message); }
-  }, 400);
+  timer = setTimeout(() => { timer = null; persist().catch(() => {}); }, 400);
+}
+function saveNow() {
+  if (timer) { clearTimeout(timer); timer = null; }
+  return persist();
 }
 
 /* ---------- Parol ---------- */
 const hash = (p, salt) => crypto.scryptSync(p, salt, 32).toString('hex');
-const same = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const same = (a, b) => {
+  const left = Buffer.from(a), right = Buffer.from(b);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+};
 
 /* ---------- AI ---------- */
 const TIERS = ['Boshlovchi', 'Oddiy', "O'rta", 'Kuchli'];
@@ -114,10 +138,10 @@ const server = http.createServer((req, res) => {
     '/', '/index.html', '/engine.js', '/styles.css', '/app.js', '/pages.js', '/manifest.json',
     '/images/shashka-logo.png', '/images/shashka-icon-192.png', '/images/shashka-icon-512.png',
     '/pages/login.html', '/pages/modes.html', '/pages/game.html',
-    '/pages/profile.html', '/pages/invitation.html'
+    '/pages/profile.html', '/pages/invitation.html', '/admin', '/admin.html', '/admin.js'
   ]);
   if (!allowed.has(requested)) { res.writeHead(404); return res.end(); }
-  const f = requested === '/' ? 'index.html' : requested.slice(1);
+  const f = requested === '/' ? 'index.html' : requested === '/admin' ? 'admin.html' : requested.slice(1);
   fs.readFile(path.join(__dirname, 'public', f), (e, d) => {
     if (e) { res.writeHead(404); return res.end(); }
     const type = f.endsWith('.js') ? 'text/javascript; charset=utf-8' : f.endsWith('.css') ? 'text/css; charset=utf-8' : f.endsWith('.png') ? 'image/png' : f.endsWith('.json') ? 'application/manifest+json; charset=utf-8' : 'text/html; charset=utf-8';
@@ -130,7 +154,7 @@ const G = g => state.groups[g] || (state.groups[g] = { players: {}, games: {} })
 const ctxFor = s => s.mode === 'online' ? state.groups[s.g] || null : s.mode === 'cup' ? state.cups[s.g] || null : s.mode === 'duel' ? state.duels[s.g] || null : s.mode === 'aicup' && state.users[s.uid] ? state.users[s.uid].aiCup : s.mode === 'ai' && state.users[s.uid] ? state.users[s.uid].ai : null;
 function pushTo(s) {
   const c = ctxFor(s);
-  if (c && s.readyState === 1) s.send(JSON.stringify({ t: 'state', mode: s.mode, league: c.name || s.g, roomId: c.id || s.g, visibility: c.visibility || 'public', players: c.players, games: c.games, cup: s.mode === 'cup' || s.mode === 'aicup' ? { name: c.name, owner: c.owner, status: c.status, rounds: c.rounds, champion: c.champion, id: c.id, ai: s.mode === 'aicup' } : undefined }));
+  if (c && s.readyState === 1) s.send(JSON.stringify({ t: 'state', mode: s.mode, league: c.name || s.g, roomId: c.id || s.g, visibility: c.visibility || 'public', players: c.players, games: c.games, cup: s.mode === 'cup' || s.mode === 'aicup' ? { name: c.name, owner: c.owner, status: c.status, phase: c.phase, groupStage: c.groupStage, playoffSize: c.playoffSize, rounds: c.rounds, champion: c.champion, id: c.id, ai: s.mode === 'aicup' } : undefined }));
 }
 const pushAll = pred => { for (const c of wss.clients) if (pred(c)) pushTo(c); };
 const pushSame = s => pushAll(c => s.mode === 'ai' || s.mode === 'aicup' ? (c.mode === s.mode && c.uid === s.uid) : (c.mode === s.mode && c.g === s.g));
@@ -263,6 +287,80 @@ function cupStart(c) {
   for (let k = 0; k < N / 2; k++) { slots.push(first[k]); slots.push(rest[k] == null ? null : rest[k]); }
   c.status = 'running'; cupRound(c, slots);
 }
+function cupGroupStandings(c) {
+  const groupStage = c.groupStage;
+  if (!groupStage) return [];
+  return groupStage.groups.map(group => {
+    const rows = group.players.map(id => ({ id, name: c.players[id].name, points: 0, wins: 0, losses: 0, draws: 0, diff: 0, played: 0 }));
+    const byId = Object.fromEntries(rows.map(row => [row.id, row]));
+    for (const gid of group.games) {
+      const game = c.games[gid];
+      if (!game || game.status !== 'done') continue;
+      const white = byId[game.white], black = byId[game.black];
+      if (!white || !black) continue;
+      white.played++; black.played++;
+      if (game.result === 'd') {
+        white.draws++; black.draws++;
+      } else {
+        const winner = game.result === 'w' ? white : black;
+        const loser = game.result === 'w' ? black : white;
+        const remaining = game.result === 'w' ? game.wl : game.bl;
+        winner.points += 3; winner.wins++;
+        loser.points -= 2; loser.losses++;
+        winner.diff += remaining;
+        loser.diff -= game.result === 'w' ? game.bl : game.wl;
+      }
+    }
+    rows.sort((a, b) => b.points - a.points || b.wins - a.wins || b.diff - a.diff || a.name.localeCompare(b.name));
+    return { name: group.name, rows };
+  });
+}
+function startCupGroupStage(c) {
+  const ids = Object.keys(c.players);
+  if (ids.length !== 12 && ids.length !== 16) return false;
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  const groups = [];
+  for (let i = 0; i < ids.length; i += 4) {
+    const group = { name: String.fromCharCode(65 + groups.length), players: ids.slice(i, i + 4), games: [] };
+    for (let a = 0; a < group.players.length; a++) {
+      for (let b = a + 1; b < group.players.length; b++) {
+        const gid = mkGame(c, group.players[a], group.players[b]);
+        c.games[gid].stage = 'groups';
+        group.games.push(gid);
+      }
+    }
+    groups.push(group);
+  }
+  c.status = 'running';
+  c.phase = 'groups';
+  c.groupStage = { groups, qualifiers: [], complete: false };
+  c.rounds = [];
+  return true;
+}
+function startCupPlayoff(c) {
+  const standings = cupGroupStandings(c).flatMap(group => group.rows);
+  standings.sort((a, b) => b.points - a.points || b.wins - a.wins || b.diff - a.diff || a.name.localeCompare(b.name));
+  const qualifiers = standings.slice(0, 12);
+  c.groupStage.qualifiers = qualifiers.map(row => row.id);
+  c.groupStage.complete = true;
+  c.phase = 'playoff';
+  c.playoffSize = 12;
+  const ids = c.groupStage.qualifiers;
+  const pairs = [
+    [ids[0], null], [ids[7], ids[8]],
+    [ids[3], null], [ids[4], ids[11]],
+    [ids[1], null], [ids[6], ids[9]],
+    [ids[2], null], [ids[5], ids[10]]
+  ];
+  const round = pairs.map(([a, b]) => {
+    const gid = b === null ? null : mkGame(c, a, b);
+    return { a, b, winner: b === null ? a : null, gid, draws: 0 };
+  });
+  c.rounds.push(round);
+}
 function cupAdvance(c) {
   const last = c.rounds[c.rounds.length - 1];
   if (last.some(m => !m.winner)) return;
@@ -272,6 +370,13 @@ function cupAdvance(c) {
 }
 function cupAfter(c, gid) {
   const g = c.games[gid]; if (!g || g.status !== 'done') return;
+  if (c.phase === 'groups') {
+    const group = c.groupStage.groups.find(item => item.games.includes(gid));
+    if (!group) return;
+    const complete = c.groupStage.groups.every(item => item.games.every(id => c.games[id]?.status === 'done'));
+    if (complete) startCupPlayoff(c);
+    return;
+  }
   const m = c.rounds[c.rounds.length - 1].find(x => x.gid === gid); if (!m) return;
   if (g.result === 'd') {
     m.draws++; m.gid = mkGame(c, m.a, m.b);
@@ -288,9 +393,35 @@ wss.on('connection', sock => {
     if (!token) { token = crypto.randomBytes(24).toString('hex'); state.sessions[token] = u.id; save(); }
     sock.uid = u.id; send({ t: 'authed', token, name: u.name, id: u.id, username: u.username || u.id }); broadcastPresence(u.id);
   };
-  sock.on('message', raw => {
+  sock.on('message', async raw => {
     let m; try { m = JSON.parse(raw); } catch (e) { return; }
     if (m.t === 'ping') return;
+
+    if (m.t === 'adminLogin') {
+      if (!ADMIN_PASSWORD) return send({ t: 'adminAuth', ok: false, msg: 'Admin sahifasi o‘chirilgan. Serverda ADMIN_PASSWORD sozlang.' });
+      if (!same(String(m.password || ''), ADMIN_PASSWORD)) return send({ t: 'adminAuth', ok: false, msg: 'Admin paroli noto‘g‘ri.' });
+      sock.admin = true;
+      return send({ t: 'adminAuth', ok: true });
+    }
+    if (m.t === 'adminClearAll') {
+      if (!sock.admin) return send({ t: 'adminAuth', ok: false, msg: 'Avval admin sifatida kiring.' });
+      if (m.confirm !== 'CLEAR ALL DATA') return send({ t: 'adminAuth', ok: false, msg: 'Tasdiqlash matni noto‘g‘ri.' });
+      const previousState = state;
+      state = { users: {}, sessions: {}, groups: {}, cups: {}, duels: {} };
+      try {
+        await saveNow();
+      } catch (e) {
+        state = previousState;
+        return send({ t: 'adminAuth', ok: false, msg: 'Ma’lumotlarni saqlashda xatolik: ' + e.message });
+      }
+      for (const client of wss.clients) {
+        if (client === sock || client.readyState !== 1) continue;
+        client.send(JSON.stringify({ t: 'dataCleared' }));
+        client.uid = null;
+        client.close(4001, 'Sayt ma’lumotlari tozalandi');
+      }
+      return send({ t: 'adminCleared' });
+    }
 
     if (m.t === 'register' || m.t === 'login') {
       const un = String(m.username || '').trim().toLowerCase().replace(/^@/, ''), pass = String(m.pass || '');
@@ -398,7 +529,7 @@ wss.on('connection', sock => {
           room.passwordSalt = crypto.randomBytes(16).toString('hex');
           room.passwordHash = hash(password, room.passwordSalt);
         }
-        if (kind === 'cup') Object.assign(room, { status: 'open', rounds: [], champion: null });
+        if (kind === 'cup') Object.assign(room, { status: 'open', phase: 'setup', rounds: [], groupStage: null, champion: null });
         rooms[id] = room;
       } else {
         id = String(m.id || '').trim().toUpperCase();
@@ -439,7 +570,7 @@ wss.on('connection', sock => {
       const nameRaw = String(m.g || '').trim().slice(0, 30), g = nameRaw.toLowerCase().replace(/[\/\s]+/g, '_');
       if (!g) return fail('Kubok nomini kiriting');
       let c = Object.prototype.hasOwnProperty.call(state.cups, g) ? state.cups[g] : null;
-      if (!c) c = state.cups[g] = { name: nameRaw, owner: u.id, status: 'open', players: {}, games: {}, rounds: [], champion: null };
+      if (!c) c = state.cups[g] = { name: nameRaw, owner: u.id, status: 'open', phase: 'setup', players: {}, games: {}, rounds: [], champion: null };
       if (!c.players[u.id]) {
         if (c.status !== 'open') return fail('Bu kubok allaqachon boshlangan');
         if (Object.keys(c.players).length >= MAXP) return fail(`Kubokda ${MAXP} ta ishtirokchi to'lgan`);
@@ -451,8 +582,8 @@ wss.on('connection', sock => {
     if (m.t === 'cupStart') {
       const c = sock.mode === 'cup' ? ctxFor(sock) : null;
       if (!c || c.owner !== u.id || c.status !== 'open') return;
-      if (Object.keys(c.players).length < 2) return fail('Kamida 2 ta ishtirokchi kerak');
-      cupStart(c); save(); pushSame(sock);
+      if (!startCupGroupStage(c)) return fail('Guruh bosqichini 12 yoki 16 ishtirokchi bilan boshlash mumkin');
+      save(); pushSame(sock);
       Object.keys(c.players).forEach(broadcastPresence);
       return;
     }
@@ -532,4 +663,7 @@ wss.on('connection', sock => {
   });
 });
 
-load().then(() => server.listen(PORT, () => console.log('Shashka Liga: port ' + PORT)));
+load().then(() => server.listen(PORT, () => console.log('Shashka Liga: port ' + PORT))).catch(e => {
+  console.error('Ma’lumotlar omborini yuklab bo‘lmadi:', e.message);
+  process.exitCode = 1;
+});

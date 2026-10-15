@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin — Shashka Liga</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="admin-main">
+    <section class="admin-panel">
+      <h1>Shashka Liga — Admin</h1>
+      <p class="mut">Bu sahifa orqali serverda saqlangan foydalanuvchilar, profillar, do‘stlar, o‘yinlar va kuboklarni boshqarasiz.</p>
+      <form id="loginForm">
+        <label for="adminPassword">Admin paroli</label>
+        <input id="adminPassword" type="password" autocomplete="current-password" required>
+        <button type="submit">Admin sifatida kirish</button>
+      </form>
+      <div id="adminActions" hidden>
+        <h2>Barcha ma’lumotlarni tozalash</h2>
+        <p class="mut">Bu amal foydalanuvchi hisoblari va barcha sayt ma’lumotlarini butunlay o‘chiradi.</p>
+        <button id="clearAll" class="danger">Barcha ma’lumotlarni tozalash</button>
+      </div>
+      <div id="adminMessage" role="status" aria-live="polite"></div>
+      <a href="/">Saytga qaytish</a>
+    </section>
+  </main>
+  <script src="/admin.js" defer></script>
+</body>
+</html>
