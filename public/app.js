@@ -3,7 +3,7 @@ const {dests}=Engine;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
-let meId,myName,players={},games={},cur=null,sel=null,sock=null,token=null,authed=false,lastEnter=null,regMode=false,curMode=null,myUser,cupData=null,fr={friends:[],incoming:[],outgoing:[]},prof=null,viewP=null,sres=[],lastQ='',mtab='prof',pend=null,saving=false,roomLists={league:[],cup:[]},inviteId=null;
+let meId,myName,players={},games={},cur=null,sel=null,sock=null,token=null,authed=false,lastEnter=null,regMode=false,curMode=null,myUser,cupData=null,roomRole='player',fr={friends:[],incoming:[],outgoing:[]},prof=null,viewP=null,sres=[],lastQ='',mtab='prof',pend=null,saving=false,roomLists={league:[],cup:[]},inviteId=null;
 
 /* ---------- Jadval ---------- */
 function table(){
@@ -33,26 +33,27 @@ function renderTable(){
 }
 function renderLobby(){
   const mine=nGames(meId);
-  $('#lobby').innerHTML=Object.keys(players).sort().map(id=>{
+  const rows=Object.keys(players).sort().map(id=>{
     if(id===meId)return `<div class="row"><span>${esc(nm(id))} <span class="tag">siz</span></span><span class="mut">${mine}/${MAXG}</span></div>`;
-    const ok=!paired(meId,id)&&mine<MAXG&&nGames(id)<MAXG;
-    const why=paired(meId,id)?'o\'ynalgan':nGames(id)>=MAXG?'to\'lgan':'';
+    const ok=roomRole!=='spectator'&&!paired(meId,id)&&mine<MAXG&&nGames(id)<MAXG;
+    const why=roomRole==='spectator'?'kuzatuvchi':paired(meId,id)?'o\'ynalgan':nGames(id)>=MAXG?'to\'lgan':'';
     return `<div class="row"><span>${esc(nm(id))} <span class="mut">${nGames(id)}/${MAXG}</span></span>${ok?`<button data-ch="${id}">O'ynash</button>`:`<span class="mut">${why}</span>`}</div>`;
-  }).join('')||'<div class="mut">Hali hech kim yo\'q</div>';
+  }).join('');
+  $('#lobby').innerHTML=(roomRole==='spectator'?'<div class="mut observer-note">Kuzatuvchi rejimi: istalgan o\'yinni tanlab tomosha qiling.</div>':'')+(rows||'<div class="mut">Hali hech kim yo\'q</div>');
 }
 function renderGames(){
   const list=Object.entries(games).filter(([,g])=>!g.sim&&!(cupData?.ai&&(g.white===meId||g.black===meId)&&!g.active&&g.status==='playing')).sort((a,b)=>b[1].created-a[1].created);
   $('#glist').innerHTML=list.map(([id,g])=>{
-    const mine=g.white===meId||g.black===meId;
+    const mine=roomRole!=='spectator'&&(g.white===meId||g.black===meId);
     const my=mine&&g.status==='playing'&&((g.turn==='w'&&g.white===meId)||(g.turn==='b'&&g.black===meId));
     const res=g.status==='done'?(g.result==='d'?'durang':(g.result==='w'?nm(g.white):nm(g.black))+' yutdi'):'davom etmoqda';
-    return `<div class="row"><span>${esc(nm(g.white))} – ${esc(nm(g.black))}<br><span class="mut">${esc(res)}</span> ${my?'<span class="tag">sizning yurishingiz</span>':''}</span><button class="ghost" data-open="${id}">${mine?'Ochish':'Ko\'rish'}</button></div>`;
-  }).join('')||'<div class="mut">O\'yin yo\'q. Ishtirokchini tanlang.</div>';
+    return `<div class="row game-row${cur===id?' watching':''}"><span>${esc(nm(g.white))} – ${esc(nm(g.black))}<br><span class="mut">${esc(res)}</span> ${my?'<span class="tag">sizning yurishingiz</span>':''}</span><button class="ghost" data-open="${id}" aria-pressed="${cur===id}">${roomRole==='spectator'?'Kuzatish':mine?'Ochish':'Ko\'rish'}</button></div>`;
+  }).join('')||(roomRole==='spectator'?'<div class="mut">Hozircha tomosha qilinadigan o\'yin yo\'q.</div>':'<div class="mut">O\'yin yo\'q. Ishtirokchini tanlang.</div>');
 }
 function renderBoard(){
   const g=games[cur];
-  if(!g){$('#board').innerHTML='';$('#info').innerHTML='<div class="big">O\'yin tanlang</div><div class="mut" style="text-align:center">Chapdagi ro\'yxatdan raqib tanlang</div>';$('#msg').textContent='';return}
-  const mine=g.white===meId?'w':g.black===meId?'b':null,flip=mine==='b',b=g.board.split('');
+  if(!g){$('#board').innerHTML='';$('#info').innerHTML=`<div class="big">O'yin tanlang</div><div class="mut" style="text-align:center">${roomRole==='spectator'?'Kuzatish uchun chapdagi ro\'yxatdan o\'yin tanlang':'Chapdagi ro\'yxatdan raqib tanlang'}</div>`;$('#msg').textContent='';return}
+  const mine=roomRole==='spectator'?null:g.white===meId?'w':g.black===meId?'b':null,flip=mine==='b',b=g.board.split('');
   const d=new Set();
   if(sel!=null&&mine&&g.turn===mine&&g.status==='playing')dests(b,mine,sel).forEach(x=>d.add(x));
   let h='';
@@ -72,6 +73,7 @@ function renderBoard(){
 const renderAll=()=>{
   if(cupData)renderCup();
   else{$('#h2l').textContent='Ishtirokchilar';$('#h2r').textContent='Liga jadvali';$('#rules').hidden=false;renderTable();renderLobby()}
+  document.querySelector('#glist').previousElementSibling.textContent=roomRole==='spectator'?'Kuzatuv kamerasi':'O\'yinlar';
   renderGames();renderBoard();
 };
 function returnToModes(message){
@@ -97,7 +99,7 @@ function matchHTML(m,aiCup=false){
   const row=(id,bye)=>`<div class="mrow${id&&m.winner===id?' win':''}${id&&m.winner&&m.winner!==id?' lose':''}">${id?esc(nm(id)):`<span class="mut">${bye?'dam olish':'—'}</span>`}</div>`;
   const mine=(m.a===meId||m.b===meId)&&!m.winner;
   const clickable=m.gid&&(!aiCup||m.active);
-  return `<div class="match${mine?' mine':''}${clickable?' clk':''}"${clickable?` data-open="${m.gid}"`:''}>${row(m.a)}${row(m.b,m.a&&!m.b)}${m.draws?`<div class="dr">${m.draws} marta durang, qayta o'ynaladi</div>`:''}</div>`;
+  return `<div class="match${mine?' mine':''}${clickable?' clk':''}${m.gid===cur?' watching':''}"${clickable?` data-open="${m.gid}"`:''}>${row(m.a)}${row(m.b,m.a&&!m.b)}${m.draws?`<div class="dr">${m.draws} marta durang, qayta o'ynaladi</div>`:''}</div>`;
 }
 function bracketHTML(c){
   if(!c.rounds.length)return '<div class="mut">Kubok hali boshlanmagan. Tashkilotchi boshlagach, qura bo\'yicha setka tuziladi.</div>';
@@ -144,6 +146,7 @@ function renderCup(){
   const c=cupData,ids=Object.keys(players);
   $('#h2l').textContent='Ishtirokchilar';$('#h2r').textContent=c.ai?'AI kubogi setkasi':c.phase==='groups'?'Guruh jadvali':c.phase==='playoff'?'Kubok setkasi':'Guruh bosqichi';$('#rules').hidden=true;
   let h=ids.map(id=>`<div class="row"><span>${esc(nm(id))}${id===meId?' <span class="tag">siz</span>':''}${id===c.owner?' <span class="mut">(tashkilotchi)</span>':''}</span></div>`).join('');
+  if(roomRole==='spectator')h+='<div class="mut observer-note">Kuzatuvchi rejimi: o\'yinlar ro\'yxatidan istalgan partiyani tanlab tomosha qiling.</div>';
   if(c.status==='open'){
     h+=`<div class="mut" style="margin:10px 0">${ids.length}/16 ishtirokchi</div>`;
     const canStart=ids.length===12||ids.length===16;
@@ -180,7 +183,7 @@ function renderRooms(kind){
   $( '#'+id ).innerHTML=list.map(r=>{
     const full=r.players>=r.max&&!r.joined,started=r.status!=='open'&&kind==='cup'&&!r.joined;
     const status=kind==='cup'&&started?'Boshlangan':`${r.players}/${r.max} ishtirokchi`;
-    return `<div class="roomrow"><span><b>${esc(r.name)}</b><br><span class="roommeta">${esc(status)}</span></span><button data-room-kind="${kind}" data-room-id="${esc(r.id)}" ${full||started?'disabled':''}>${started?'Yopiq':'Kirish'}</button></div>`;
+    return `<div class="roomrow"><span><b>${esc(r.name)}</b><br><span class="roommeta">${esc(status)}</span></span><span class="room-actions"><button data-room-kind="${kind}" data-room-role="player" data-room-id="${esc(r.id)}" ${full||started?'disabled':''}>O'ynash</button><button class="ghost" data-room-kind="${kind}" data-room-role="spectator" data-room-id="${esc(r.id)}">Kuzatish</button></span></div>`;
   }).join('')||"<div class='mut'>Hozircha ommaviy xona yo'q</div>";
 }
 
@@ -224,6 +227,7 @@ $('#modeDialog').addEventListener('click',e=>{if(e.target.id==='modeDialog')clos
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#modeDialog').hidden)closeModeDialog()});
 $('#board').onclick=e=>{
   const s=e.target.closest('.sq');if(!s)return;
+  if(roomRole==='spectator')return;
   const g=games[cur];if(!g||g.status!=='playing')return;
   const mine=g.white===meId?'w':g.black===meId?'b':null;
   if(!mine||g.turn!==mine)return;
@@ -235,11 +239,11 @@ $('#board').onclick=e=>{
 };
 document.addEventListener('click',e=>{
   const o=e.target.closest('[data-open]');
-  if(o){cur=o.dataset.open;sel=null;renderBoard();return}
+  if(o){cur=o.dataset.open;sel=null;renderAll();return}
   const c=e.target.closest('[data-ch]');
   if(c)send({t:'challenge',oid:c.dataset.ch});
   const r=e.target.closest('[data-room-id]');
-  if(r)enterRoom({t:'joinRoom',kind:r.dataset.roomKind,id:r.dataset.roomId});
+  if(r)enterRoom({t:'joinRoom',kind:r.dataset.roomKind,id:r.dataset.roomId,role:r.dataset.roomRole});
 });
 
 /* ---------- Ulanish va kirish ---------- */
@@ -270,14 +274,14 @@ function onMsg(ev){
   }else if(m.t==='dataCleared'){
     token=null;authed=false;lastEnter=null;ls.del('shashka_token');ls.del('shashka_enter');show('login');err('Sayt ma’lumotlari administrator tomonidan tozalandi.');
   }else if(m.t==='state'){
-    players=m.players;games=m.games;cupData=m.cup||null;
+    players=m.players;games=m.games;cupData=m.cup||null;roomRole=m.role||'player';
     const key=m.mode+(m.league||'');
     if(curMode!==key){curMode=key;cur=null;sel=null}
     closeModeDialog();
     if($('#app').hidden)show('app');
     $('#hg').textContent=m.mode==='ai'?'AI bilan liga':m.mode==='aicup'?'AI kubogi':m.mode==='duel'?"Do'st bilan duel":(m.mode==='cup'?'Kubok: ':'Liga: ')+(m.league||'');
     if(m.mode!=='ai'&&m.mode!=='aicup')$('#hg').textContent+=' · ID '+(m.roomId||'');
-    $('#hn').textContent='Siz: '+myName;
+    $('#hn').textContent='Siz: '+myName+(roomRole==='spectator'?' · Kuzatuvchi':'');
     document.querySelector('main').className=m.mode==='cup'||m.mode==='aicup'?'cup':'';
     const mp=Object.entries(games).find(([,x])=>x.status==='playing'&&(x.white===meId||x.black===meId)),g0=games[cur];
     if(m.mode==='aicup'){
@@ -286,7 +290,7 @@ function onMsg(ev){
       const activeRound=[...(cupData?.rounds||[])].reverse().find(round=>round.some(match=>(match.a===meId||match.b===meId)&&match.winner===null));
       const activeMatch=activeRound&&activeRound.find(match=>(match.a===meId||match.b===meId)&&match.winner===null);
       if(g0&&g0.status==='done'&&g0.result==='d'&&activeMatch?.draws&&activeMatch.gid!==cur&&games[activeMatch.gid]?.status==='playing')cur=activeMatch.gid;
-    }else if(!g0||(g0.status==='done'&&mp&&(g0.white===meId||g0.black===meId)))cur=mp?mp[0]:(g0?cur:null);
+    }else if(roomRole!=='spectator'&&(!g0||(g0.status==='done'&&mp&&(g0.white===meId||g0.black===meId))))cur=mp?mp[0]:(g0?cur:null);
     renderAll();
     if(m.mode==='aicup')checkAICupResult();
   }else if(m.t==='opened'){cur=m.gid;sel=null;renderAll()}
@@ -338,7 +342,7 @@ function createRoom(kind){
   const cup=kind==='cup',name=$('#'+(cup?'newcup':'newlg')).value.trim(),visibility=$('#'+kind+'visibility').value,password=$('#'+kind+'createpass').value;
   if(!name)return $('#merr').textContent=cup?'Kubok nomini kiriting':'Liga nomini kiriting';
   if(visibility==='private'&&password.length<4)return $('#merr').textContent="Maxfiy xona paroli kamida 4 ta belgidan iborat bo'lsin";
-  enterRoom({t:'createRoom',kind,name,visibility,password});
+  enterRoom({t:'createRoom',kind,name,visibility,password,role:$('#'+kind+'createRole').value});
 }
 function joinById(kind){
   const cup=kind==='cup',id=$('#'+kind+'id').value.trim(),password=$('#'+kind+'pass').value;

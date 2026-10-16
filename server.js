@@ -154,11 +154,12 @@ const G = g => state.groups[g] || (state.groups[g] = { players: {}, games: {} })
 const ctxFor = s => s.mode === 'online' ? state.groups[s.g] || null : s.mode === 'cup' ? state.cups[s.g] || null : s.mode === 'duel' ? state.duels[s.g] || null : s.mode === 'aicup' && state.users[s.uid] ? state.users[s.uid].aiCup : s.mode === 'ai' && state.users[s.uid] ? state.users[s.uid].ai : null;
 function pushTo(s) {
   const c = ctxFor(s);
-  if (c && s.readyState === 1) s.send(JSON.stringify({ t: 'state', mode: s.mode, league: c.name || s.g, roomId: c.id || s.g, visibility: c.visibility || 'public', players: c.players, games: c.games, cup: s.mode === 'cup' || s.mode === 'aicup' ? { name: c.name, owner: c.owner, status: c.status, phase: c.phase, groupStage: c.groupStage, playoffSize: c.playoffSize, rounds: c.rounds, champion: c.champion, id: c.id, ai: s.mode === 'aicup' } : undefined }));
+  if (c && s.readyState === 1) s.send(JSON.stringify({ t: 'state', mode: s.mode, role: s.role || 'player', league: c.name || s.g, roomId: c.id || s.g, visibility: c.visibility || 'public', players: c.players, games: c.games, cup: s.mode === 'cup' || s.mode === 'aicup' ? { name: c.name, owner: c.owner, status: c.status, phase: c.phase, groupStage: c.groupStage, playoffSize: c.playoffSize, rounds: c.rounds, champion: c.champion, id: c.id, ai: s.mode === 'aicup' } : undefined }));
 }
 const pushAll = pred => { for (const c of wss.clients) if (pred(c)) pushTo(c); };
 const pushSame = s => pushAll(c => s.mode === 'ai' || s.mode === 'aicup' ? (c.mode === s.mode && c.uid === s.uid) : (c.mode === s.mode && c.g === s.g));
 function forfeitActiveGames(sock) {
+  if (sock.role === 'spectator') return;
   const ctx = ctxFor(sock);
   if (!ctx || !['online', 'cup', 'duel'].includes(sock.mode)) return;
   let changed = false;
@@ -449,7 +450,7 @@ wss.on('connection', sock => {
 
     if (m.t === 'leave') {
       forfeitActiveGames(sock);
-      sock.mode = null; sock.g = null;
+      sock.mode = null; sock.g = null; sock.role = null;
       broadcastPresence(u.id);
       return;
     }
@@ -479,7 +480,7 @@ wss.on('connection', sock => {
       const id = uniqueRoomId('league', state.duels);
       const duel = state.duels[id] = { id, name: `Duel: ${inviter.name} – ${u.name}`, players: { [invitation.from]: { name: inviter.name }, [u.id]: { name: u.name } }, games: {} };
       const gid = mkGame(duel, invitation.from, u.id);
-      for (const c of wss.clients) if (c.uid === invitation.from || c.uid === u.id) { c.mode = 'duel'; c.g = id; }
+      for (const c of wss.clients) if (c.uid === invitation.from || c.uid === u.id) { c.mode = 'duel'; c.g = id; c.role = 'player'; }
       save(); broadcastPresence(invitation.from); broadcastPresence(u.id);
       pushAll(c => c.mode === 'duel' && c.g === id);
       for (const c of wss.clients) if (c.uid === invitation.from && c.readyState === 1) c.send(JSON.stringify({ t: 'opened', gid }));
@@ -492,7 +493,7 @@ wss.on('connection', sock => {
       const cup = { id: `AI-${u.id}`, name: 'AI kubogi', owner: u.id, visibility: 'private', status: 'open', players, games: {}, rounds: [], champion: null, ai: true };
       state.users[u.id].aiCup = cup;
       cupStart(cup);
-      sock.mode = 'aicup'; sock.g = null;
+      sock.mode = 'aicup'; sock.g = null; sock.role = 'player';
       save(); pushTo(sock); runAiTurns(sock); broadcastPresence(u.id);
       return;
     }
@@ -516,6 +517,7 @@ wss.on('connection', sock => {
     if (m.t === 'createRoom' || m.t === 'joinRoom') {
       const kind = m.kind === 'cup' ? 'cup' : 'league';
       const rooms = kind === 'cup' ? state.cups : state.groups;
+      const role = m.role === 'spectator' ? 'spectator' : 'player';
       let id, room;
       if (m.t === 'createRoom') {
         const name = String(m.name || '').trim().replace(/\s+/g, ' ').slice(0, 30);
@@ -537,12 +539,12 @@ wss.on('connection', sock => {
         if (!room) return fail('Bunday ID bilan xona topilmadi');
         if (room.visibility === 'private' && (!room.passwordSalt || !same(hash(String(m.password || ''), room.passwordSalt), room.passwordHash))) return fail('Maxfiy xona paroli noto\'g\'ri');
       }
-      if (kind === 'cup' && room.status !== 'open' && !room.players[u.id]) return fail('Bu kubok allaqachon boshlangan');
-      if (!room.players[u.id]) {
+      if (role === 'player' && kind === 'cup' && room.status !== 'open' && !room.players[u.id]) return fail('Bu kubok allaqachon boshlangan');
+      if (role === 'player' && !room.players[u.id]) {
         if (Object.keys(room.players).length >= MAXP) return fail(`${kind === 'cup' ? 'Kubokda' : 'Ligada'} ${MAXP} ta ishtirokchi to'lgan`);
         room.players[u.id] = { name: u.name, created: Date.now() };
       }
-      sock.mode = kind === 'cup' ? 'cup' : 'online'; sock.g = id;
+      sock.mode = kind === 'cup' ? 'cup' : 'online'; sock.g = id; sock.role = role;
       save(); broadcastPresence(u.id);
       return pushSame(sock);
     }
@@ -555,12 +557,12 @@ wss.on('connection', sock => {
         grp.players[u.id] = { name: u.name, created: Date.now() };
         save();
       }
-      sock.mode = 'online'; sock.g = g;
+      sock.mode = 'online'; sock.g = g; sock.role = 'player';
       return pushSame(sock);
     }
     if (m.t === 'startAI') {
       if (!u.ai) { newAILeague(u); save(); }
-      sock.mode = 'ai'; sock.g = null;
+      sock.mode = 'ai'; sock.g = null; sock.role = 'player';
       pushTo(sock);
       for (const gid in u.ai.games) aiTurn(sock, gid);
       broadcastPresence(u.id);
@@ -576,7 +578,7 @@ wss.on('connection', sock => {
         if (Object.keys(c.players).length >= MAXP) return fail(`Kubokda ${MAXP} ta ishtirokchi to'lgan`);
         c.players[u.id] = { name: u.name }; save();
       }
-      sock.mode = 'cup'; sock.g = g;
+      sock.mode = 'cup'; sock.g = g; sock.role = 'player';
       return pushSame(sock);
     }
     if (m.t === 'cupStart') {
@@ -627,6 +629,7 @@ wss.on('connection', sock => {
 
     if (m.t === 'challenge') {
       if (sock.mode === 'cup') return;
+      if (sock.role === 'spectator' || !ctx.players[sock.uid]) return fail('Kuzatuvchi o\'yin boshlay olmaydi');
       const oid = String(m.oid);
       if (!ctx.players[oid] || oid === sock.uid) return fail('Ishtirokchi topilmadi');
       if (paired(ctx, sock.uid, oid)) return fail("Siz bu ishtirokchi bilan o'ynagansiz");
@@ -640,6 +643,7 @@ wss.on('connection', sock => {
     if (m.t === 'move') {
       const g = ctx.games[m.gid];
       if (!g || g.status !== 'playing') return;
+      if (sock.role === 'spectator') return fail('Kuzatuvchi yurish qila olmaydi');
       if (sock.mode === 'aicup' && !g.active) return fail('Keyingi bosqichni boshlash uchun natijalarni kuting');
       const col = g.white === sock.uid ? 'w' : g.black === sock.uid ? 'b' : null;
       if (col !== g.turn) return fail('Hozir sizning yurishingiz emas');
